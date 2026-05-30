@@ -1,0 +1,21 @@
+{
+  "name": "amitvet",
+  "version": "1.0.0",
+  "description": "מערכת לניהול משימות ותקשורת עבור מרפאה וטרינרית - ערוץ בין לקוחות לווטרינר הראשי",
+  "main": "server/index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node --no-warnings server/index.js",
+    "dev": "node --no-warnings --watch server/index.js",
+    "seed": "node --no-warnings server/db.js --seed"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
