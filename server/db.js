@@ -5,7 +5,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const bcrypt = require('bcryptjs');
 
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// DATA_DIR can point to a mounted persistent volume on the hosting platform.
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }

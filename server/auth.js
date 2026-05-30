@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 
 // A stable secret is persisted to disk so logins survive restarts.
 // Override in production via the JWT_SECRET environment variable.
-const DATA_DIR = path.join(__dirname, '..', 'data');
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
 const SECRET_FILE = path.join(DATA_DIR, '.jwt_secret');
 function loadSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;

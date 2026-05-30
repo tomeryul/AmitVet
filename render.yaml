@@ -1,0 +1,25 @@
+# Render Blueprint — deploy AmitVet with one click.
+# In Render: New + → "Blueprint" → connect this repo. Render reads this file.
+#
+# The free plan has NO persistent disk: the SQLite data resets on every
+# redeploy/restart (it IS shared between users while the service is running).
+# For permanent storage, upgrade the plan and uncomment the `disk:` block below.
+services:
+  - type: web
+    name: amitvet
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+    # --- For persistent data (paid plan) uncomment the next lines: ---
+    # disk:
+    #   name: amitvet-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # and add an env var:  DATA_DIR = /var/data

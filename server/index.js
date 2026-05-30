@@ -9,6 +9,9 @@ const { attachUser } = require('./auth');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Hosting platforms (Render, Railway, Fly.io, ...) sit behind an HTTPS proxy.
+app.set('trust proxy', 1);
+
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(attachUser);
@@ -38,6 +41,6 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'שגיאת שרת פנימית' });
 });
 
-app.listen(PORT, () => {
-  console.log(`\n🐾 AmitVet פועל בכתובת http://localhost:${PORT}\n`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🐾 AmitVet פועל על פורט ${PORT}\n`);
 });
