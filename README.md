@@ -21,81 +21,93 @@
 - ניהול רשומות רפואיות וחיסונים לכל חיה
 - רשימת כל הלקוחות והמטופלים
 
-## הפעלה
+## 🚀 העלאה לאוויר — GitHub Pages + Supabase (מומלץ)
+
+ארכיטקטורה זו נותנת אתר שנטען **מיד** (GitHub Pages) עם שרת **תמיד-ער** וחינמי
+(Supabase) שמטפל בהתחברות, בשמירת הנתונים ובהודעות בזמן אמת. הממשק נמצא בתיקיית
+`docs/`.
+
+### שלב 1 — הקמת Supabase
+
+1. היכנסו ל-[supabase.com](https://supabase.com), צרו חשבון ולחצו **New project**
+   (בחרו אזור קרוב, למשל Frankfurt). שמרו את סיסמת מסד הנתונים.
+2. בתפריט הצד: **SQL Editor → New query**. העתיקו את כל התוכן של
+   הקובץ [`supabase/schema.sql`](supabase/schema.sql), הדביקו, ולחצו **Run**.
+   זה יוצר את כל הטבלאות וכללי האבטחה.
+3. **Authentication → Providers → Email**: ודאו ש-Email מופעל, וכבו את
+   **"Confirm email"** (כדי שההרשמה תכניס מיד בלי אימות מייל).
+
+### שלב 2 — חיבור הממשק
+
+ב-Supabase לכו אל **Settings → API** והעתיקו שני ערכים אל הקובץ `docs/config.js`:
+
+```js
+window.AMITVET_CONFIG = {
+  SUPABASE_URL: "https://xxxx.supabase.co",   // Project URL
+  SUPABASE_ANON_KEY: "eyJhbGci...",            // anon public key
+};
+```
+
+> ה-anon key מיועד לצד-לקוח ובטוח לפרסום — האבטחה נאכפת ע"י כללי ה-RLS שב-SQL.
+
+### שלב 3 — פרסום ב-GitHub Pages
+
+1. דחפו את הקוד ל-GitHub.
+2. ב-repo: **Settings → Pages**.
+3. תחת **Source** בחרו **Deploy from a branch**, ובחרו את הברנץ' שלכם
+   ואת התיקייה **`/docs`**. שמרו.
+4. כעבור דקה תקבלו כתובת כמו `https://USERNAME.github.io/AmitVet/`.
+
+### שלב 4 — הגדרת הווטרינר הראשי
+
+היכנסו לאתר ו**הירשמו** עם המייל שלכם. כדי להפוך את החשבון לווטרינר, חזרו ל-Supabase
+**SQL Editor** והריצו:
+
+```sql
+update public.profiles set role = 'vet' where email = 'האימייל-שלכם@דוגמה.com';
+```
+
+רעננו את האתר — עכשיו תראו את לוח הבקרה של הווטרינר. כל שאר הנרשמים הם לקוחות.
+
+---
+
+## הרצה מקומית / אירוח Node (אופציונלי)
+
+הפרויקט כולל גם שרת Node.js עצמאי (תיקיות `server/` ו-`public/`) עם SQLite מובנה —
+שימושי לפיתוח מקומי או לאירוח עצמאי ללא Supabase:
 
 ```bash
 npm install
-npm start
+npm start         # http://localhost:3000
 ```
 
-ואז גלשו אל http://localhost:3000
-
-### חשבונות לדוגמה (נוצרים אוטומטית בהרצה ראשונה)
-
-| תפקיד   | אימייל                | סיסמה      |
-|---------|-----------------------|------------|
-| וטרינר  | admin@amitvet.local   | admin1234  |
-| לקוח    | dana@example.com      | client1234 |
-
-> ⚠️ יש להחליף את סיסמת הווטרינר לפני שימוש אמיתי.
-
-## העלאה לאוויר (Deployment)
-
-> ⚠️ **למה לא GitHub Pages?** GitHub Pages מגיש רק קבצים סטטיים ולא יכול
-> להריץ שרת או מסד נתונים. כדי שההתחברות, שמירת המידע והתקשורת בין הלקוחות
-> לווטרינר יעבדו — צריך פלטפורמה שמריצה Node. הפרויקט מוכן לכך.
-
-### אפשרות א׳ — Render (המומלצת, חינמית, הכי פשוטה)
-
-1. דחפו את הקוד ל-GitHub.
-2. היכנסו ל-[render.com](https://render.com) והתחברו עם חשבון GitHub.
-3. לחצו **New + → Blueprint**, בחרו את ה-repo הזה.
-   Render יקרא אוטומטית את הקובץ `render.yaml` ויקים את השירות.
-4. כעבור דקה–שתיים תקבלו כתובת חיה כמו `https://amitvet.onrender.com`.
-
-> 🔸 **שימו לב לגבי שמירת המידע:** בתוכנית החינמית של Render אין דיסק קבוע —
-> המידע משותף בין כל המשתמשים כל עוד השירות פעיל, אך מתאפס בכל פריסה מחדש
-> (redeploy). לשמירה קבועה: שדרגו תוכנית והפעילו את בלוק ה-`disk` שמסומן
-> כהערה בקובץ `render.yaml` (והגדירו `DATA_DIR=/var/data`).
-
-### אפשרות ב׳ — Fly.io (חינמי עם דיסק קבוע אמיתי)
-
-מתאים אם חשובה לכם שמירת מידע לאורך זמן. דורש התקנת ה-CLI:
-
-```bash
-fly launch          # מזהה את ה-Dockerfile
-fly volumes create amitvet_data --size 1   # דיסק קבוע
-# ב-fly.toml: הוסיפו mount של הווליום אל /data, והגדירו DATA_DIR=/data
-fly deploy
-```
-
-### אפשרות ג׳ — כל פלטפורמה עם Docker (Railway, VPS וכו׳)
-
-הפרויקט כולל `Dockerfile` מוכן. הדיסק הקבוע ממופה אל `/data`:
-
-```bash
-docker build -t amitvet .
-docker run -p 3000:3000 -v amitvet_data:/data \
-  -e NODE_ENV=production -e JWT_SECRET="בחרו-מחרוזת-סודית-ארוכה" amitvet
-```
-
-> 🔐 בכל אירוח אמיתי הגדירו `JWT_SECRET` למחרוזת אקראית וארוכה,
-> ושנו את סיסמת חשבון הווטרינר אחרי ההתחברות הראשונה.
+בגרסה זו נוצרים חשבונות דמו: וטרינר `admin@amitvet.local` / `admin1234`,
+לקוח `dana@example.com` / `client1234`. ניתן לפרוס אותה ב-Render / Fly.io / Docker
+(ראו `Dockerfile` ו-`render.yaml`). ⚠️ שירותי Node חינמיים "נרדמים" אחרי חוסר
+פעילות — לכן לאתר חי ומהיר עדיף נתיב GitHub Pages + Supabase שלמעלה.
 
 ## מבנה טכני
 
-- **שרת:** Node.js + Express
-- **מסד נתונים:** SQLite מובנה (`node:sqlite`) — ללא תלות חיצונית. הקובץ נשמר ב-`data/amitvet.db`
-- **אימות:** JWT בעוגייה מסוג httpOnly, סיסמאות מוצפנות ב-bcrypt
-- **ממשק:** HTML/CSS/JS טהור (ללא שלב build), RTL
+הפרויקט תומך בשתי דרכי הרצה, חולקות את אותו ממשק וסכמת נתונים:
+
+- **GitHub Pages + Supabase** (מומלץ): ממשק סטטי ב-`docs/` המדבר מול Supabase
+  (PostgreSQL + Auth + Realtime). אבטחה ע"י Row Level Security.
+- **שרת Node עצמאי:** Express + SQLite מובנה (`node:sqlite`), אימות JWT בעוגיית
+  httpOnly עם הצפנת bcrypt.
+
+הממשק: HTML/CSS/JS טהור ב-RTL, ללא שלב build.
 
 ```
-server/
-  index.js          הגדרת Express ו-routing
-  db.js             סכמה + נתוני דמו
-  auth.js           JWT והרשאות
-  routes/           auth, pets, appointments, inquiries, medical, admin
-public/             הממשק (index.html, styles.css, app.js)
+docs/               גרסת GitHub Pages
+  index.html        טוען את supabase-js + config + app
+  config.js         פרטי חיבור ל-Supabase (יש למלא)
+  app.js            ממשק + שכבת נתונים מול Supabase
+  styles.css
+supabase/
+  schema.sql        טבלאות + טריגרים + מדיניות RLS
+server/             שרת Node עצמאי (אופציונלי)
+  index.js, db.js, auth.js, routes/
+public/             ממשק לגרסת ה-Node
 ```
 
 ## משתני סביבה

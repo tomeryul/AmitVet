@@ -5,16 +5,182 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+/* ---- Supabase client ---- */
+const CFG = window.AMITVET_CONFIG || {};
+const CONFIG_OK = CFG.SUPABASE_URL && CFG.SUPABASE_ANON_KEY && !/YOUR-/.test(CFG.SUPABASE_URL + CFG.SUPABASE_ANON_KEY);
+const sb = CONFIG_OK ? window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY) : null;
+
+function must({ data, error }) { if (error) throw new Error(error.message || 'שגיאה מול השרת'); return data; }
+const uid = () => State.user && State.user.id;
+const vet = () => State.user && State.user.role === 'vet';
+let _profile = null;
+async function loadProfile() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) throw new Error('נדרשת התחברות');
+  if (!_profile || _profile.id !== user.id) {
+    _profile = must(await sb.from('profiles').select('*').eq('id', user.id).single());
+  }
+  return { ..._profile, email: user.email };
+}
+
+/*
+ * api() — תאימות-לאחור: ממפה את אותן קריאות REST שהשתמשנו בהן עם שרת ה-Node
+ * אל קריאות Supabase, כך שכל קוד הממשק נשאר ללא שינוי.
+ */
 async function api(path, opts = {}) {
-  const res = await fetch('/api' + path, {
-    method: opts.method || 'GET',
-    headers: { 'Content-Type': 'application/json' },
-    body: opts.body ? JSON.stringify(opts.body) : undefined,
-  });
-  let data = {};
-  try { data = await res.json(); } catch {}
-  if (!res.ok) throw new Error(data.error || 'אירעה שגיאה');
-  return data;
+  const method = (opts.method || 'GET').toUpperCase();
+  const b = opts.body || {};
+  const [raw, qsStr] = path.split('?');
+  const q = Object.fromEntries(new URLSearchParams(qsStr || ''));
+  const s = raw.split('/').filter(Boolean); // e.g. ['pets','5']
+  const petId = b.pet_id ? Number(b.pet_id) : null;
+
+  // ---------------- auth ----------------
+  if (raw === '/auth/me') { const p = await loadProfile();
+    return { user: { id: p.id, name: p.name, email: p.email, phone: p.phone, role: p.role, created_at: p.created_at } }; }
+
+  if (raw === '/auth/login') {
+    const { error } = await sb.auth.signInWithPassword({ email: b.email, password: b.password });
+    if (error) throw new Error('אימייל או סיסמה שגויים');
+    _profile = null; const p = await loadProfile();
+    return { user: { id: p.id, name: p.name, role: p.role } };
+  }
+  if (raw === '/auth/register') {
+    const { data, error } = await sb.auth.signUp({ email: b.email, password: b.password, options: { data: { name: b.name, phone: b.phone || null } } });
+    if (error) throw new Error(error.message);
+    if (!data.session) throw new Error('החשבון נוצר. אם נדרש אימות מייל — אשרו את הקישור שנשלח אליכם ואז התחברו.');
+    _profile = null; const p = await loadProfile();
+    return { user: { id: p.id, name: p.name, role: p.role } };
+  }
+  if (raw === '/auth/logout') { await sb.auth.signOut(); _profile = null; return { ok: true }; }
+
+  // ---------------- pets ----------------
+  if (s[0] === 'pets' && s.length === 1 && method === 'GET') {
+    const rows = must(await sb.from('pets').select('*, owner:profiles!owner_id(name,phone)').order('created_at', { ascending: false }));
+    return { pets: rows.map((p) => ({ ...p, owner_name: p.owner?.name, owner_phone: p.owner?.phone })) };
+  }
+  if (s[0] === 'pets' && s.length === 2 && method === 'GET') {
+    const pet = must(await sb.from('pets').select('*').eq('id', s[1]).single());
+    const vaccinations = must(await sb.from('vaccinations').select('*').eq('pet_id', s[1]).order('date_given', { ascending: false }));
+    const recs = must(await sb.from('medical_records').select('*, vet:profiles!vet_id(name)').eq('pet_id', s[1]).order('visit_date', { ascending: false }));
+    return { pet, vaccinations, records: recs.map((r) => ({ ...r, vet_name: r.vet?.name })) };
+  }
+  if (s[0] === 'pets' && method === 'POST') {
+    const row = { owner_id: vet() && b.owner_id ? b.owner_id : uid(), name: b.name, species: b.species, breed: b.breed || null,
+      sex: ['male', 'female', 'unknown'].includes(b.sex) ? b.sex : 'unknown', birthdate: b.birthdate || null,
+      weight_kg: b.weight_kg ? Number(b.weight_kg) : null, notes: b.notes || null };
+    return { pet: must(await sb.from('pets').insert(row).select().single()) };
+  }
+  if (s[0] === 'pets' && method === 'PUT') {
+    const row = { name: b.name, species: b.species, breed: b.breed || null,
+      sex: ['male', 'female', 'unknown'].includes(b.sex) ? b.sex : 'unknown', birthdate: b.birthdate || null,
+      weight_kg: b.weight_kg != null && b.weight_kg !== '' ? Number(b.weight_kg) : null, notes: b.notes || null };
+    return { pet: must(await sb.from('pets').update(row).eq('id', s[1]).select().single()) };
+  }
+  if (s[0] === 'pets' && method === 'DELETE') { must(await sb.from('pets').delete().eq('id', s[1])); return { ok: true }; }
+
+  // ---------------- appointments ----------------
+  if (s[0] === 'appointments' && s.length === 1 && method === 'GET') {
+    let qy = sb.from('appointments').select('*, client:profiles!client_id(name,phone), pet:pets(name,species)');
+    if (vet() && q.status) qy = qy.eq('status', q.status);
+    qy = qy.order('scheduled_at', { ascending: vet() });
+    const rows = must(await qy);
+    return { appointments: rows.map((a) => ({ ...a, client_name: a.client?.name, client_phone: a.client?.phone, pet_name: a.pet?.name, pet_species: a.pet?.species })) };
+  }
+  if (s[0] === 'appointments' && method === 'POST') {
+    const row = { client_id: vet() && b.client_id ? b.client_id : uid(), pet_id: petId,
+      type: b.type || 'checkup', scheduled_at: b.scheduled_at, duration_min: b.duration_min ? Number(b.duration_min) : 30,
+      reason: b.reason || null, status: vet() ? 'confirmed' : 'requested' };
+    return { appointment: must(await sb.from('appointments').insert(row).select().single()) };
+  }
+  if (s[0] === 'appointments' && s.length === 2 && method === 'PATCH') {
+    if (!vet()) { must(await sb.from('appointments').update({ status: 'cancelled' }).eq('id', s[1])); return { appointment: { id: Number(s[1]) } }; }
+    const patch = {};
+    if (b.status) patch.status = b.status;
+    if (b.scheduled_at) patch.scheduled_at = b.scheduled_at;
+    if (b.vet_notes !== undefined) patch.vet_notes = b.vet_notes;
+    if (b.type) patch.type = b.type;
+    if (b.reason !== undefined) patch.reason = b.reason;
+    return { appointment: must(await sb.from('appointments').update(patch).eq('id', s[1]).select().single()) };
+  }
+  if (s[0] === 'appointments' && method === 'DELETE') { must(await sb.from('appointments').delete().eq('id', s[1])); return { ok: true }; }
+
+  // ---------------- inquiries ----------------
+  if (s[0] === 'inquiries' && s.length === 1 && method === 'GET') {
+    let qy = sb.from('inquiries').select('*, client:profiles!client_id(name), pet:pets(name), messages(count)');
+    if (vet() && q.status) qy = qy.eq('status', q.status);
+    const rows = must(await qy.order('updated_at', { ascending: false }));
+    return { inquiries: rows.map((i) => ({ ...i, client_name: i.client?.name, pet_name: i.pet?.name, message_count: i.messages?.[0]?.count || 0 })) };
+  }
+  if (s[0] === 'inquiries' && s.length === 2 && method === 'GET') {
+    const i = must(await sb.from('inquiries').select('*, client:profiles!client_id(name), pet:pets(name), messages(count)').eq('id', s[1]).single());
+    const msgs = must(await sb.from('messages').select('*, sender:profiles!sender_id(name,role)').eq('inquiry_id', s[1]).order('created_at', { ascending: true }));
+    return { inquiry: { ...i, client_name: i.client?.name, pet_name: i.pet?.name, message_count: i.messages?.[0]?.count || 0 },
+      messages: msgs.map((m) => ({ ...m, sender_name: m.sender?.name, sender_role: m.sender?.role })) };
+  }
+  if (s[0] === 'inquiries' && s.length === 1 && method === 'POST') {
+    const inq = must(await sb.from('inquiries').insert({ client_id: vet() && b.client_id ? b.client_id : uid(),
+      pet_id: petId, subject: b.subject, priority: b.priority || 'normal' }).select('id').single());
+    must(await sb.from('messages').insert({ inquiry_id: inq.id, sender_id: uid(), body: b.body }));
+    return { inquiry: { id: inq.id } };
+  }
+  if (s[0] === 'inquiries' && s[2] === 'messages' && method === 'POST') {
+    const msg = must(await sb.from('messages').insert({ inquiry_id: Number(s[1]), sender_id: uid(), body: b.body })
+      .select('*, sender:profiles!sender_id(name,role)').single());
+    const cur = must(await sb.from('inquiries').select('status').eq('id', s[1]).single());
+    const newStatus = vet() && cur.status === 'open' ? 'in_progress' : cur.status;
+    must(await sb.from('inquiries').update({ updated_at: new Date().toISOString(), status: newStatus }).eq('id', s[1]));
+    return { message: { ...msg, sender_name: msg.sender?.name, sender_role: msg.sender?.role } };
+  }
+  if (s[0] === 'inquiries' && s.length === 2 && method === 'PATCH') {
+    const patch = { updated_at: new Date().toISOString() };
+    if (b.status) patch.status = b.status;
+    if (vet() && b.priority) patch.priority = b.priority;
+    return { inquiry: must(await sb.from('inquiries').update(patch).eq('id', s[1]).select().single()) };
+  }
+
+  // ---------------- medical / vaccinations ----------------
+  if (raw === '/medical/records' && method === 'POST') {
+    return { record: must(await sb.from('medical_records').insert({ pet_id: petId, vet_id: uid(),
+      visit_date: b.visit_date || new Date().toISOString().slice(0, 10), diagnosis: b.diagnosis || null,
+      treatment: b.treatment || null, notes: b.notes || null }).select().single()) };
+  }
+  if (s[0] === 'medical' && s[1] === 'records' && method === 'DELETE') { must(await sb.from('medical_records').delete().eq('id', s[2])); return { ok: true }; }
+  if (raw === '/medical/vaccinations' && method === 'POST') {
+    return { vaccination: must(await sb.from('vaccinations').insert({ pet_id: petId, vaccine_name: b.vaccine_name,
+      date_given: b.date_given || new Date().toISOString().slice(0, 10), next_due: b.next_due || null, notes: b.notes || null }).select().single()) };
+  }
+  if (s[0] === 'medical' && s[1] === 'vaccinations' && method === 'DELETE') { must(await sb.from('vaccinations').delete().eq('id', s[2])); return { ok: true }; }
+
+  // ---------------- admin ----------------
+  if (raw === '/admin/clients') {
+    const rows = must(await sb.from('profiles').select('id,name,email,phone,created_at, pets(count)').eq('role', 'client').order('name'));
+    return { clients: rows.map((c) => ({ ...c, pet_count: c.pets?.[0]?.count || 0 })) };
+  }
+  if (raw === '/admin/dashboard') {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const end = new Date(start); end.setDate(end.getDate() + 1);
+    const todayStr = start.toISOString().slice(0, 10);
+    const in30 = new Date(start); in30.setDate(in30.getDate() + 30);
+    const [pa, oi, tc, tp] = await Promise.all([
+      sb.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'requested'),
+      sb.from('inquiries').select('id', { count: 'exact', head: true }).neq('status', 'resolved'),
+      sb.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'client'),
+      sb.from('pets').select('id', { count: 'exact', head: true }),
+    ]);
+    const todayRows = must(await sb.from('appointments').select('*, client:profiles!client_id(name), pet:pets(name)')
+      .gte('scheduled_at', start.toISOString()).lt('scheduled_at', end.toISOString())
+      .in('status', ['confirmed', 'requested']).order('scheduled_at', { ascending: true }));
+    const vacRows = must(await sb.from('vaccinations').select('*, pet:pets(name, owner:profiles!owner_id(name))')
+      .gte('next_due', todayStr).lte('next_due', in30.toISOString().slice(0, 10)).order('next_due', { ascending: true }));
+    return {
+      stats: { pendingAppointments: pa.count || 0, openInquiries: oi.count || 0, totalClients: tc.count || 0, totalPets: tp.count || 0 },
+      todayAppointments: todayRows.map((a) => ({ ...a, client_name: a.client?.name, pet_name: a.pet?.name })),
+      upcomingVaccinations: vacRows.map((v) => ({ ...v, pet_name: v.pet?.name, owner_name: v.pet?.owner?.name })),
+    };
+  }
+
+  throw new Error('פעולה לא נתמכת: ' + method + ' ' + raw);
 }
 
 function toast(msg, type = '') {
@@ -23,13 +189,14 @@ function toast(msg, type = '') {
   setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3000);
 }
 
-function openModal(title, bodyNode, footNode) {
+function openModal(title, bodyNode, footNode, onClose) {
   const overlay = el(`<div class="modal-overlay"><div class="modal">
     <div class="modal-head"><h3>${esc(title)}</h3><button class="x">×</button></div>
     <div class="modal-body"></div></div></div>`);
   overlay.querySelector('.modal-body').appendChild(bodyNode);
   if (footNode) { const f = el('<div class="modal-foot"></div>'); f.appendChild(footNode); overlay.querySelector('.modal').appendChild(f); }
-  const close = () => overlay.remove();
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; overlay.remove(); if (onClose) onClose(); };
   overlay.querySelector('.x').onclick = close;
   overlay.onclick = (e) => { if (e.target === overlay) close(); };
   $('#modal-root').appendChild(overlay);
@@ -59,9 +226,28 @@ const State = { user: null };
 
 /* ============================ Bootstrap ============================ */
 (async function init() {
+  if (!CONFIG_OK) { renderSetup(); return; }
   try { const { user } = await api('/auth/me'); State.user = user; renderApp(); }
   catch { renderAuth(); }
 })();
+
+// Shown when docs/config.js still has placeholder Supabase credentials.
+function renderSetup() {
+  $('#app').innerHTML = '';
+  $('#app').appendChild(el(`<div class="auth-wrap"><div class="auth-card" style="max-width:520px;text-align:right">
+    <div class="auth-logo">🐾</div>
+    <h1>הגדרת AmitVet</h1>
+    <p class="sub">חיבור ל-Supabase לא הושלם עדיין</p>
+    <p style="margin-bottom:12px">כדי שהאתר יעבוד צריך למלא את פרטי ה-Supabase בקובץ
+      <code>docs/config.js</code>:</p>
+    <ol style="padding-in-start:20px;line-height:2;font-size:14px">
+      <li>פתחו פרויקט חינמי ב-<b>supabase.com</b></li>
+      <li>הריצו את הקובץ <code>supabase/schema.sql</code> ב-SQL Editor</li>
+      <li>העתיקו את ה-<b>Project URL</b> וה-<b>anon key</b> (Settings → API) אל <code>docs/config.js</code></li>
+    </ol>
+    <p class="muted mt" style="font-size:13px">הסבר מלא בקובץ <code>README.md</code>.</p>
+  </div></div>`));
+}
 
 /* ============================ Auth screen ============================ */
 function renderAuth() {
@@ -549,7 +735,13 @@ async function openInquiry(id) {
     ctl.appendChild(save);
   }
 
-  const { close } = openModal(inquiry.subject, body);
+  // Live updates: refresh the thread when a new message lands in this inquiry.
+  const channel = sb.channel('inq-' + id)
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `inquiry_id=eq.${id}` },
+      async () => { try { const { messages: m } = await api(`/inquiries/${id}`); renderMsgs(m); setTimeout(() => thread.scrollTop = thread.scrollHeight, 30); } catch {} })
+    .subscribe();
+
+  openModal(inquiry.subject, body, null, () => sb.removeChannel(channel));
   body.querySelector('#reply').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) body.querySelector('#send').click(); });
 }
 
