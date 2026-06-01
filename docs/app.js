@@ -63,7 +63,9 @@ async function api(path, opts = {}) {
     const pet = must(await sb.from('pets').select('*').eq('id', s[1]).single());
     const vaccinations = must(await sb.from('vaccinations').select('*').eq('pet_id', s[1]).order('date_given', { ascending: false }));
     const recs = must(await sb.from('medical_records').select('*, vet:profiles!vet_id(name)').eq('pet_id', s[1]).order('visit_date', { ascending: false }));
-    return { pet, vaccinations, records: recs.map((r) => ({ ...r, vet_name: r.vet?.name })) };
+    const prescriptions = must(await sb.from('prescriptions').select('*').eq('pet_id', s[1]).order('active', { ascending: false }).order('start_date', { ascending: false }));
+    const weights = must(await sb.from('weight_logs').select('*').eq('pet_id', s[1]).order('measured_at', { ascending: true }));
+    return { pet, vaccinations, records: recs.map((r) => ({ ...r, vet_name: r.vet?.name })), prescriptions, weights };
   }
   if (s[0] === 'pets' && method === 'POST') {
     const row = { owner_id: vet() && b.owner_id ? b.owner_id : uid(), name: b.name, species: b.species, breed: b.breed || null,
@@ -162,11 +164,12 @@ async function api(path, opts = {}) {
     const end = new Date(start); end.setDate(end.getDate() + 1);
     const todayStr = start.toISOString().slice(0, 10);
     const in30 = new Date(start); in30.setDate(in30.getDate() + 30);
-    const [pa, oi, tc, tp] = await Promise.all([
+    const [pa, oi, tc, tp, ot] = await Promise.all([
       sb.from('appointments').select('id', { count: 'exact', head: true }).eq('status', 'requested'),
       sb.from('inquiries').select('id', { count: 'exact', head: true }).neq('status', 'resolved'),
       sb.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'client'),
       sb.from('pets').select('id', { count: 'exact', head: true }),
+      sb.from('tasks').select('id', { count: 'exact', head: true }).eq('status', 'open'),
     ]);
     const todayRows = must(await sb.from('appointments').select('*, client:profiles!client_id(name), pet:pets(name)')
       .gte('scheduled_at', start.toISOString()).lt('scheduled_at', end.toISOString())
@@ -174,9 +177,76 @@ async function api(path, opts = {}) {
     const vacRows = must(await sb.from('vaccinations').select('*, pet:pets(name, owner:profiles!owner_id(name))')
       .gte('next_due', todayStr).lte('next_due', in30.toISOString().slice(0, 10)).order('next_due', { ascending: true }));
     return {
-      stats: { pendingAppointments: pa.count || 0, openInquiries: oi.count || 0, totalClients: tc.count || 0, totalPets: tp.count || 0 },
+      stats: { pendingAppointments: pa.count || 0, openInquiries: oi.count || 0, totalClients: tc.count || 0, totalPets: tp.count || 0, openTasks: ot.count || 0 },
       todayAppointments: todayRows.map((a) => ({ ...a, client_name: a.client?.name, pet_name: a.pet?.name })),
       upcomingVaccinations: vacRows.map((v) => ({ ...v, pet_name: v.pet?.name, owner_name: v.pet?.owner?.name })),
+    };
+  }
+
+  // ---------------- tasks (vet) ----------------
+  if (s[0] === 'tasks' && s.length === 1 && method === 'GET') {
+    let qy = sb.from('tasks').select('*, client:profiles!client_id(name), pet:pets(name)');
+    if (q.status) qy = qy.eq('status', q.status);
+    const rows = must(await qy.order('status', { ascending: true }).order('due_date', { ascending: true, nullsFirst: false }).order('created_at', { ascending: false }));
+    return { tasks: rows.map((t) => ({ ...t, client_name: t.client?.name, pet_name: t.pet?.name })) };
+  }
+  if (s[0] === 'tasks' && method === 'POST') {
+    return { task: must(await sb.from('tasks').insert({ created_by: uid(), title: b.title, notes: b.notes || null,
+      due_date: b.due_date || null, priority: b.priority || 'normal',
+      client_id: b.client_id || null, pet_id: b.pet_id ? Number(b.pet_id) : null }).select().single()) };
+  }
+  if (s[0] === 'tasks' && s.length === 2 && method === 'PATCH') {
+    const patch = {};
+    if (b.status) patch.status = b.status;
+    if (b.title) patch.title = b.title;
+    if (b.notes !== undefined) patch.notes = b.notes;
+    if (b.due_date !== undefined) patch.due_date = b.due_date || null;
+    if (b.priority) patch.priority = b.priority;
+    return { task: must(await sb.from('tasks').update(patch).eq('id', s[1]).select().single()) };
+  }
+  if (s[0] === 'tasks' && method === 'DELETE') { must(await sb.from('tasks').delete().eq('id', s[1])); return { ok: true }; }
+
+  // ---------------- prescriptions (vet writes) ----------------
+  if (raw === '/prescriptions' && method === 'POST') {
+    return { prescription: must(await sb.from('prescriptions').insert({ pet_id: petId, vet_id: uid(),
+      medication: b.medication, dosage: b.dosage || null, instructions: b.instructions || null,
+      start_date: b.start_date || new Date().toISOString().slice(0, 10), end_date: b.end_date || null,
+      active: b.active !== undefined ? !!b.active : true }).select().single()) };
+  }
+  if (s[0] === 'prescriptions' && s.length === 2 && method === 'PATCH') {
+    return { prescription: must(await sb.from('prescriptions').update({ active: !!b.active }).eq('id', s[1]).select().single()) };
+  }
+  if (s[0] === 'prescriptions' && method === 'DELETE') { must(await sb.from('prescriptions').delete().eq('id', s[1])); return { ok: true }; }
+
+  // ---------------- weight logs (vet writes) ----------------
+  if (raw === '/weights' && method === 'POST') {
+    return { weight: must(await sb.from('weight_logs').insert({ pet_id: petId, weight_kg: Number(b.weight_kg),
+      measured_at: b.measured_at || new Date().toISOString().slice(0, 10), notes: b.notes || null }).select().single()) };
+  }
+  if (s[0] === 'weights' && method === 'DELETE') { must(await sb.from('weight_logs').delete().eq('id', s[1])); return { ok: true }; }
+
+  // ---------------- clinic settings ----------------
+  if (raw === '/clinic' && method === 'GET') {
+    return { clinic: must(await sb.from('clinic_settings').select('*').eq('id', 1).single()) };
+  }
+  if (raw === '/clinic' && method === 'PUT') {
+    return { clinic: must(await sb.from('clinic_settings').update({ clinic_name: b.clinic_name || null, phone: b.phone || null,
+      address: b.address || null, hours: b.hours || null, emergency_info: b.emergency_info || null,
+      updated_at: new Date().toISOString() }).eq('id', 1).select().single()) };
+  }
+
+  // ---------------- reminders (client dashboard) ----------------
+  if (raw === '/reminders' && method === 'GET') {
+    const todayIso = new Date().toISOString();
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const in60 = new Date(); in60.setDate(in60.getDate() + 60);
+    const appts = must(await sb.from('appointments').select('*, pet:pets(name)')
+      .gte('scheduled_at', todayIso).in('status', ['requested', 'confirmed']).order('scheduled_at', { ascending: true }));
+    const vaccs = must(await sb.from('vaccinations').select('*, pet:pets(name)')
+      .gte('next_due', todayStr).lte('next_due', in60.toISOString().slice(0, 10)).order('next_due', { ascending: true }));
+    return {
+      appointments: appts.map((a) => ({ ...a, pet_name: a.pet?.name })),
+      vaccinations: vaccs.map((v) => ({ ...v, pet_name: v.pet?.name })),
     };
   }
 
@@ -209,6 +279,7 @@ const APPT_TYPES = { checkup: 'בדיקה כללית', vaccination: 'חיסון'
 const APPT_STATUS = { requested: 'ממתין לאישור', confirmed: 'מאושר', completed: 'הושלם', cancelled: 'בוטל' };
 const INQ_STATUS = { open: 'פתוח', in_progress: 'בטיפול', resolved: 'נסגר' };
 const PRIORITY = { low: 'נמוכה', normal: 'רגילה', high: 'גבוהה', urgent: 'דחוף' };
+const TASK_STATUS = { open: 'פתוחה', done: 'הושלמה' };
 const SEX = { male: 'זכר', female: 'נקבה', unknown: 'לא ידוע' };
 const SPECIES_ICON = (s) => { s = (s || '').toLowerCase();
   if (s.includes('כלב')) return '🐕'; if (s.includes('חתול')) return '🐈'; if (s.includes('ציפור') || s.includes('תוכי')) return '🦜';
@@ -300,16 +371,19 @@ function registerForm() {
 const NAV = {
   vet: [
     { id: 'dashboard', label: 'לוח בקרה', ico: '📊' },
-    { id: 'appointments', label: 'פגישות', ico: '📅' },
-    { id: 'inquiries', label: 'פניות', ico: '💬' },
+    { id: 'appointments', label: 'פגישות', ico: '📅', badge: 'pendingAppointments' },
+    { id: 'inquiries', label: 'פניות', ico: '💬', badge: 'openInquiries' },
+    { id: 'tasks', label: 'משימות', ico: '✅', badge: 'openTasks' },
     { id: 'clients', label: 'לקוחות', ico: '👥' },
     { id: 'pets', label: 'מטופלים', ico: '🐾' },
+    { id: 'clinic', label: 'המרפאה', ico: '🏥' },
   ],
   client: [
     { id: 'dashboard', label: 'בית', ico: '🏠' },
     { id: 'pets', label: 'החיות שלי', ico: '🐾' },
     { id: 'appointments', label: 'הפגישות שלי', ico: '📅' },
     { id: 'inquiries', label: 'הפניות שלי', ico: '💬' },
+    { id: 'clinic', label: 'המרפאה', ico: '🏥' },
   ],
 };
 
@@ -332,17 +406,30 @@ function renderApp() {
   root.appendChild(shell);
   const nav = shell.querySelector('nav');
   NAV[State.user.role].forEach((item) => {
-    const b = el(`<button data-v="${item.id}"><span class="ico">${item.ico}</span><span>${item.label}</span></button>`);
+    const b = el(`<button data-v="${item.id}"><span class="ico">${item.ico}</span><span>${item.label}</span>${item.badge ? `<span class="count" data-badge="${item.badge}" hidden></span>` : ''}</button>`);
     b.onclick = () => navigate(item.id);
     nav.appendChild(b);
   });
   shell.querySelector('#logout').onclick = async () => { await api('/auth/logout', { method: 'POST' }); State.user = null; renderAuth(); };
   navigate('dashboard');
+  if (isVet) refreshBadges();
+}
+
+// Updates the sidebar count badges (vet) from the dashboard stats.
+async function refreshBadges() {
+  try {
+    const { stats } = await api('/admin/dashboard');
+    document.querySelectorAll('.sidebar .count[data-badge]').forEach((sp) => {
+      const n = stats[sp.dataset.badge] || 0;
+      if (n > 0) { sp.textContent = n; sp.hidden = false; } else { sp.hidden = true; }
+    });
+  } catch {}
 }
 
 function navigate(view) {
   document.querySelectorAll('.sidebar nav button').forEach((b) => b.classList.toggle('active', b.dataset.v === view));
-  const fn = { dashboard: viewDashboard, pets: viewPets, appointments: viewAppointments, inquiries: viewInquiries, clients: viewClients }[view];
+  const fn = { dashboard: viewDashboard, pets: viewPets, appointments: viewAppointments, inquiries: viewInquiries,
+    clients: viewClients, tasks: viewTasks, clinic: viewClinic }[view];
   fn();
 }
 
@@ -363,6 +450,7 @@ async function vetDashboard() {
     <div class="grid cols-3 mb">
       <div class="stat-card"><div class="n">${stats.pendingAppointments}</div><div class="l">בקשות פגישה ממתינות</div></div>
       <div class="stat-card"><div class="n">${stats.openInquiries}</div><div class="l">פניות פתוחות</div></div>
+      <div class="stat-card"><div class="n">${stats.openTasks || 0}</div><div class="l">משימות פתוחות</div></div>
       <div class="stat-card"><div class="n">${stats.totalClients}</div><div class="l">לקוחות רשומים</div></div>
       <div class="stat-card"><div class="n">${stats.totalPets}</div><div class="l">מטופלים</div></div>
     </div>
@@ -384,8 +472,8 @@ async function vetDashboard() {
 }
 
 async function clientDashboard() {
-  const [{ appointments }, { inquiries }, { pets }] = await Promise.all([
-    api('/appointments'), api('/inquiries'), api('/pets')]);
+  const [{ appointments }, { pets }, reminders] = await Promise.all([
+    api('/appointments'), api('/pets'), api('/reminders')]);
   const upcoming = appointments.filter((a) => a.status !== 'cancelled' && a.status !== 'completed').slice(0, 3);
   const node = el(`<div>
     <div class="page-head"><h2>שלום, ${esc(State.user.name)} 👋</h2></div>
@@ -394,12 +482,30 @@ async function clientDashboard() {
       <div class="card click" id="q-inq"><div class="avatar">💬</div><h3 class="mt">פנייה לווטרינר</h3><p class="muted">יש לך שאלה? כתוב/כתבי לנו</p></div>
       <div class="card click" id="q-pet"><div class="avatar">🐾</div><h3 class="mt">הוספת חיה</h3><p class="muted">${pets.length} חיות רשומות</p></div>
     </div>
+    <div class="section-title">🔔 תזכורות</div>
+    <div id="reminders"></div>
     <div class="section-title">📅 הפגישות הקרובות שלך</div>
     <div id="up"></div>
   </div>`);
   node.querySelector('#q-appt').onclick = () => navigate('appointments');
   node.querySelector('#q-inq').onclick = () => navigate('inquiries');
   node.querySelector('#q-pet').onclick = () => navigate('pets');
+
+  const rem = node.querySelector('#reminders');
+  const vaccDue = reminders.vaccinations || [];
+  const apptSoon = (reminders.appointments || []).slice(0, 3);
+  if (!vaccDue.length && !apptSoon.length) rem.appendChild(el('<p class="muted">אין תזכורות כרגע — הכל מסודר! ✨</p>'));
+  vaccDue.forEach((v) => rem.appendChild(el(
+    `<div class="list-item"><div class="avatar">💉</div><div class="grow">
+      <div class="title">חיסון ${esc(v.vaccine_name)}${v.pet_name ? ' · ' + esc(v.pet_name) : ''}</div>
+      <div class="meta">מועד מומלץ: ${fmtDate(v.next_due)}</div></div>
+      <span class="badge high">חיסון מתקרב</span></div>`)));
+  apptSoon.forEach((a) => rem.appendChild(el(
+    `<div class="list-item"><div class="avatar">📅</div><div class="grow">
+      <div class="title">${APPT_TYPES[a.type] || a.type}${a.pet_name ? ' · ' + esc(a.pet_name) : ''}</div>
+      <div class="meta">${fmtDateTime(a.scheduled_at)}</div></div>
+      <span class="badge ${a.status}">${APPT_STATUS[a.status]}</span></div>`)));
+
   const up = node.querySelector('#up');
   if (!upcoming.length) up.appendChild(el('<p class="muted">אין פגישות קרובות. אפשר לקבוע תור מהכרטיס למעלה.</p>'));
   upcoming.forEach((a) => up.appendChild(apptListItem(a)));
@@ -462,19 +568,54 @@ function petForm(pet) {
 }
 
 async function openPetDetail(id) {
-  const { pet, vaccinations, records } = await api(`/pets/${id}`);
+  const { pet, vaccinations, records, prescriptions = [], weights = [] } = await api(`/pets/${id}`);
   const isVet = State.user.role === 'vet';
+  const latestWeight = weights.length ? weights[weights.length - 1].weight_kg : pet.weight_kg;
   const body = el(`<div>
     <div class="detail-row"><div class="k">סוג / גזע</div><div class="v">${esc(pet.species)}${pet.breed ? ' · ' + esc(pet.breed) : ''}</div></div>
     <div class="detail-row"><div class="k">מין</div><div class="v">${SEX[pet.sex] || '—'}</div></div>
     <div class="detail-row"><div class="k">גיל</div><div class="v">${ageFrom(pet.birthdate) || '—'}${pet.birthdate ? ' (' + fmtDate(pet.birthdate) + ')' : ''}</div></div>
-    <div class="detail-row"><div class="k">משקל</div><div class="v">${pet.weight_kg ? pet.weight_kg + ' ק"ג' : '—'}</div></div>
+    <div class="detail-row"><div class="k">משקל נוכחי</div><div class="v">${latestWeight ? latestWeight + ' ק"ג' : '—'}</div></div>
     <div class="detail-row"><div class="k">הערות</div><div class="v">${esc(pet.notes) || '—'}</div></div>
+
+    <div class="section-title">⚖️ מעקב משקל ${isVet ? '<button class="btn sm" id="add-wt">＋</button>' : ''}</div>
+    <div id="wt"></div>
+
+    <div class="section-title">💊 מרשמים ותרופות ${isVet ? '<button class="btn sm" id="add-rx">＋</button>' : ''}</div>
+    <div id="rx"></div>
+
     <div class="section-title">💉 חיסונים ${isVet ? '<button class="btn sm" id="add-vac">＋</button>' : ''}</div>
     <div id="vac"></div>
+
     <div class="section-title">📋 היסטוריה רפואית ${isVet ? '<button class="btn sm" id="add-rec">＋</button>' : ''}</div>
     <div id="rec"></div>
   </div>`);
+
+  // Weight: mini chart + log
+  const wt = body.querySelector('#wt');
+  if (!weights.length) { wt.appendChild(el('<p class="muted">אין מדידות משקל.</p>')); }
+  else {
+    wt.appendChild(weightChart(weights));
+    weights.slice().reverse().forEach((w) => { const item = el(
+      `<div class="list-item"><div class="grow"><div class="title">${w.weight_kg} ק"ג</div>
+        <div class="meta">${fmtDate(w.measured_at)}${w.notes ? ' · ' + esc(w.notes) : ''}</div></div></div>`);
+      if (isVet) { const d = el('<button class="btn ghost sm">מחק</button>'); d.onclick = async () => {
+        await api(`/weights/${w.id}`, { method: 'DELETE' }); close(); openPetDetail(id); }; item.appendChild(d); }
+      wt.appendChild(item); });
+  }
+
+  // Prescriptions
+  const rx = body.querySelector('#rx');
+  if (!prescriptions.length) rx.appendChild(el('<p class="muted">אין מרשמים.</p>'));
+  prescriptions.forEach((p) => { const item = el(
+    `<div class="list-item"><div class="grow">
+      <div class="title">${esc(p.medication)}${p.dosage ? ' · ' + esc(p.dosage) : ''}</div>
+      <div class="meta">${p.instructions ? esc(p.instructions) + ' · ' : ''}החל מ-${fmtDate(p.start_date)}${p.end_date ? ' עד ' + fmtDate(p.end_date) : ''}</div></div>
+      <span class="badge ${p.active ? 'confirmed' : 'cancelled'}">${p.active ? 'פעיל' : 'הופסק'}</span></div>`);
+    if (isVet) { const t = el(`<button class="btn ghost sm">${p.active ? 'הפסק' : 'הפעל'}</button>`);
+      t.onclick = async () => { await api(`/prescriptions/${p.id}`, { method: 'PATCH', body: { active: !p.active } }); close(); openPetDetail(id); }; item.appendChild(t); }
+    rx.appendChild(item); });
+
   const vac = body.querySelector('#vac');
   if (!vaccinations.length) vac.appendChild(el('<p class="muted">אין חיסונים רשומים.</p>'));
   vaccinations.forEach((v) => vac.appendChild(el(
@@ -499,7 +640,63 @@ async function openPetDetail(id) {
   if (isVet) {
     body.querySelector('#add-vac').onclick = () => { close(); vaccinationForm(pet.id); };
     body.querySelector('#add-rec').onclick = () => { close(); recordForm(pet.id); };
+    body.querySelector('#add-rx').onclick = () => { close(); prescriptionForm(pet.id); };
+    body.querySelector('#add-wt').onclick = () => { close(); weightForm(pet.id); };
   }
+}
+
+// Simple inline SVG line chart of weight over time.
+function weightChart(weights) {
+  const w = 300, h = 90, pad = 8;
+  const vals = weights.map((x) => Number(x.weight_kg));
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const span = max - min || 1;
+  const n = weights.length;
+  const xAt = (i) => n === 1 ? w / 2 : pad + (i * (w - 2 * pad)) / (n - 1);
+  const yAt = (v) => h - pad - ((v - min) / span) * (h - 2 * pad);
+  const pts = vals.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(' ');
+  const dots = vals.map((v, i) => `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="3" fill="#0d9488"/>`).join('');
+  return el(`<div class="card" style="padding:10px;margin-bottom:10px">
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:90px" preserveAspectRatio="none">
+      <polyline points="${pts}" fill="none" stroke="#0d9488" stroke-width="2"/>${dots}
+    </svg>
+    <div class="meta" style="display:flex;justify-content:space-between">
+      <span>${fmtDate(weights[0].measured_at)}</span>
+      <span>טווח: ${min}–${max} ק"ג</span>
+      <span>${fmtDate(weights[n - 1].measured_at)}</span></div></div>`);
+}
+
+function prescriptionForm(petId) {
+  const f = el(`<form>
+    <div class="field"><label>תרופה / מרשם *</label><input name="medication" required></div>
+    <div class="row">
+      <div class="field"><label>מינון</label><input name="dosage" placeholder='למשל: 1 כדור פעמיים ביום'></div>
+      <div class="field"><label>הוראות</label><input name="instructions" placeholder="עם אוכל / לפני שינה..."></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>תאריך התחלה</label><input type="date" name="start_date" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>תאריך סיום</label><input type="date" name="end_date"></div>
+    </div></form>`);
+  const submit = el('<button class="btn">שמירה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
+  const { close } = openModal('הוספת מרשם', f, wrapBtns(submit, cancel)); cancel.onclick = close;
+  submit.onclick = async () => { if (!f.medication.value) return toast('שם התרופה הוא שדה חובה', 'err'); try {
+    await api('/prescriptions', { method: 'POST', body: { pet_id: petId, medication: f.medication.value, dosage: f.dosage.value,
+      instructions: f.instructions.value, start_date: f.start_date.value, end_date: f.end_date.value } });
+    toast('נוסף מרשם', 'ok'); close(); openPetDetail(petId); } catch (e) { toast(e.message, 'err'); } };
+}
+
+function weightForm(petId) {
+  const f = el(`<form>
+    <div class="row">
+      <div class="field"><label>משקל (ק"ג) *</label><input type="number" step="0.01" name="weight_kg" required></div>
+      <div class="field"><label>תאריך</label><input type="date" name="measured_at" value="${new Date().toISOString().slice(0,10)}"></div>
+    </div>
+    <div class="field"><label>הערות</label><input name="notes"></div></form>`);
+  const submit = el('<button class="btn">שמירה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
+  const { close } = openModal('הוספת מדידת משקל', f, wrapBtns(submit, cancel)); cancel.onclick = close;
+  submit.onclick = async () => { if (!f.weight_kg.value) return toast('נא להזין משקל', 'err'); try {
+    await api('/weights', { method: 'POST', body: { pet_id: petId, weight_kg: f.weight_kg.value, measured_at: f.measured_at.value, notes: f.notes.value } });
+    toast('המשקל נשמר', 'ok'); close(); openPetDetail(petId); } catch (e) { toast(e.message, 'err'); } };
 }
 
 function vaccinationForm(petId) {
@@ -758,6 +955,111 @@ async function viewClients() {
         <div class="meta">${esc(c.email)}${c.phone ? ' · ' + esc(c.phone) : ''} · ${c.pet_count} חיות</div></div>
       <span class="muted">מאז ${fmtDate(c.created_at)}</span></div>`)));
   setView(node);
+}
+
+/* ============================ Tasks (vet only) ============================ */
+let taskFilter = 'open';
+async function viewTasks() {
+  loadingView();
+  const { tasks } = await api('/tasks' + (taskFilter ? '?status=' + taskFilter : ''));
+  const node = el(`<div>
+    <div class="page-head"><h2>משימות</h2><button class="btn" id="add">＋ משימה חדשה</button></div>
+    <div class="toolbar" id="filters"></div>
+    <div id="list"></div></div>`);
+  const filters = node.querySelector('#filters');
+  [['open', 'פתוחות'], ['done', 'הושלמו'], ['', 'הכל']].forEach(([v, l]) => {
+    const c = el(`<button class="chip ${taskFilter === v ? 'active' : ''}">${l}</button>`);
+    c.onclick = () => { taskFilter = v; viewTasks(); }; filters.appendChild(c);
+  });
+  const list = node.querySelector('#list');
+  if (!tasks.length) list.appendChild(el(`<div class="empty"><span class="ico">✅</span>אין משימות להצגה.</div>`));
+  tasks.forEach((t) => {
+    const done = t.status === 'done';
+    const item = el(`<div class="list-item">
+      <div class="avatar">${done ? '✅' : '⬜'}</div>
+      <div class="grow"><div class="title" style="${done ? 'text-decoration:line-through;opacity:.6' : ''}">${esc(t.title)}</div>
+        <div class="meta">${t.due_date ? 'יעד: ' + fmtDate(t.due_date) : ''}${t.client_name ? ' · ' + esc(t.client_name) : ''}${t.pet_name ? ' · ' + esc(t.pet_name) : ''}${t.notes ? ' · ' + esc(t.notes) : ''}</div></div>
+      <span class="badge ${t.priority}">${PRIORITY[t.priority]}</span></div>`);
+    const toggle = el(`<button class="btn ${done ? 'ghost' : ''} sm">${done ? 'החזר' : 'סיום'}</button>`);
+    toggle.onclick = async (e) => { e.stopPropagation(); await api(`/tasks/${t.id}`, { method: 'PATCH', body: { status: done ? 'open' : 'done' } }); viewTasks(); refreshBadges(); };
+    item.appendChild(toggle);
+    item.style.cursor = 'pointer';
+    item.onclick = () => taskForm(t);
+    list.appendChild(item);
+  });
+  node.querySelector('#add').onclick = () => taskForm();
+  setView(node);
+}
+
+async function taskForm(task) {
+  const [pets, { clients }] = await Promise.all([
+    api('/pets').then((r) => r.pets), api('/admin/clients')]);
+  const petOpts = pets.map((p) => `<option value="${p.id}" ${task && p.id === task.pet_id ? 'selected' : ''}>${esc(p.name)}${p.owner_name ? ' · ' + esc(p.owner_name) : ''}</option>`).join('');
+  const clientOpts = clients.map((c) => `<option value="${c.id}" ${task && c.id === task.client_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  const f = el(`<form>
+    <div class="field"><label>כותרת המשימה *</label><input name="title" required value="${esc(task?.title || '')}"></div>
+    <div class="row">
+      <div class="field"><label>תאריך יעד</label><input type="date" name="due_date" value="${esc(task?.due_date || '')}"></div>
+      <div class="field"><label>דחיפות</label><select name="priority">
+        ${Object.entries(PRIORITY).map(([v, l]) => `<option value="${v}" ${(task?.priority || 'normal') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>לקוח קשור</label><select name="client_id"><option value="">— ללא —</option>${clientOpts}</select></div>
+      <div class="field"><label>חיה קשורה</label><select name="pet_id"><option value="">— ללא —</option>${petOpts}</select></div>
+    </div>
+    <div class="field"><label>הערות</label><textarea name="notes">${esc(task?.notes || '')}</textarea></div>
+  </form>`);
+  const submit = el(`<button class="btn">${task ? 'שמירה' : 'הוספה'}</button>`);
+  const cancel = el('<button class="btn ghost">ביטול</button>');
+  const btns = [submit, cancel];
+  if (task) { const del = el('<button class="btn danger">מחיקה</button>');
+    del.onclick = async () => { if (!confirm('למחוק את המשימה?')) return; await api(`/tasks/${task.id}`, { method: 'DELETE' }); toast('נמחק', 'ok'); close(); viewTasks(); refreshBadges(); };
+    btns.push(del); }
+  const { close } = openModal(task ? 'עריכת משימה' : 'משימה חדשה', f, wrapBtns(...btns));
+  cancel.onclick = close;
+  submit.onclick = async () => {
+    if (!f.title.value) return toast('כותרת היא שדה חובה', 'err');
+    const body = { title: f.title.value, due_date: f.due_date.value, priority: f.priority.value,
+      client_id: f.client_id.value || null, pet_id: f.pet_id.value || null, notes: f.notes.value };
+    try { await api(task ? `/tasks/${task.id}` : '/tasks', { method: task ? 'PATCH' : 'POST', body });
+      toast('נשמר', 'ok'); close(); viewTasks(); refreshBadges(); } catch (e) { toast(e.message, 'err'); }
+  };
+}
+
+/* ============================ Clinic info / settings ============================ */
+async function viewClinic() {
+  loadingView();
+  const { clinic } = await api('/clinic');
+  const isVet = State.user.role === 'vet';
+  if (isVet) {
+    const f = el(`<div class="card" style="max-width:600px">
+      <div class="field"><label>שם המרפאה</label><input id="clinic_name" value="${esc(clinic.clinic_name || '')}"></div>
+      <div class="row">
+        <div class="field"><label>טלפון</label><input id="phone" value="${esc(clinic.phone || '')}"></div>
+        <div class="field"><label>כתובת</label><input id="address" value="${esc(clinic.address || '')}"></div>
+      </div>
+      <div class="field"><label>שעות פעילות</label><textarea id="hours" placeholder="א'-ה' 09:00-19:00&#10;ו' 09:00-13:00">${esc(clinic.hours || '')}</textarea></div>
+      <div class="field"><label>מידע לשעת חירום</label><textarea id="emergency_info" placeholder="טלפון חירום, מרפאה תורנית...">${esc(clinic.emergency_info || '')}</textarea></div>
+      <button class="btn" id="save">שמירת פרטי המרפאה</button>
+    </div>`);
+    const node = el(`<div><div class="page-head"><h2>פרטי המרפאה</h2></div></div>`);
+    node.appendChild(f);
+    f.querySelector('#save').onclick = async () => { try {
+      await api('/clinic', { method: 'PUT', body: { clinic_name: f.querySelector('#clinic_name').value, phone: f.querySelector('#phone').value,
+        address: f.querySelector('#address').value, hours: f.querySelector('#hours').value, emergency_info: f.querySelector('#emergency_info').value } });
+      toast('פרטי המרפאה נשמרו', 'ok'); } catch (e) { toast(e.message, 'err'); } };
+    setView(node);
+  } else {
+    const empty = !clinic.clinic_name && !clinic.phone && !clinic.address && !clinic.hours;
+    const node = el(`<div><div class="page-head"><h2>${esc(clinic.clinic_name || 'המרפאה')}</h2></div>
+      ${empty ? '<p class="muted">פרטי המרפאה טרם הוזנו.</p>' : `<div class="card" style="max-width:600px">
+        ${clinic.phone ? `<div class="detail-row"><div class="k">📞 טלפון</div><div class="v"><a href="tel:${esc(clinic.phone)}">${esc(clinic.phone)}</a></div></div>` : ''}
+        ${clinic.address ? `<div class="detail-row"><div class="k">📍 כתובת</div><div class="v">${esc(clinic.address)}</div></div>` : ''}
+        ${clinic.hours ? `<div class="detail-row"><div class="k">🕐 שעות</div><div class="v" style="white-space:pre-line">${esc(clinic.hours)}</div></div>` : ''}
+        ${clinic.emergency_info ? `<div class="detail-row"><div class="k">🚨 חירום</div><div class="v" style="white-space:pre-line">${esc(clinic.emergency_info)}</div></div>` : ''}
+      </div>`}</div>`);
+    setView(node);
+  }
 }
 
 /* ============================ small utils ============================ */
