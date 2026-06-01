@@ -4,6 +4,8 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const el = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+// Render any <i data-lucide> placeholders into inline SVGs (Garden design language).
+function drawIcons() { try { window.lucide && window.lucide.createIcons(); } catch {} }
 
 /* ---- Supabase client ---- */
 const CFG = window.AMITVET_CONFIG || {};
@@ -306,7 +308,7 @@ const State = { user: null };
 function renderSetup() {
   $('#app').innerHTML = '';
   $('#app').appendChild(el(`<div class="auth-wrap"><div class="auth-card" style="max-width:520px;text-align:right">
-    <div class="auth-logo">🐾</div>
+    <div class="auth-logo"><span class="mark"><i data-lucide="paw-print"></i></span></div>
     <h1>הגדרת AmitVet</h1>
     <p class="sub">חיבור ל-Supabase לא הושלם עדיין</p>
     <p style="margin-bottom:12px">כדי שהאתר יעבוד צריך למלא את פרטי ה-Supabase בקובץ
@@ -318,6 +320,7 @@ function renderSetup() {
     </ol>
     <p class="muted mt" style="font-size:13px">הסבר מלא בקובץ <code>README.md</code>.</p>
   </div></div>`));
+  drawIcons();
 }
 
 /* ============================ Auth screen ============================ */
@@ -325,13 +328,14 @@ function renderAuth() {
   const root = $('#app');
   root.innerHTML = '';
   const wrap = el(`<div class="auth-wrap"><div class="auth-card">
-    <div class="auth-logo">🐾</div>
+    <div class="auth-logo"><span class="mark"><i data-lucide="paw-print"></i></span></div>
     <h1>AmitVet</h1>
     <p class="sub">המרפאה הווטרינרית שלך, במרחק קליק</p>
     <div class="tabs"><button data-t="login" class="active">התחברות</button><button data-t="register">הרשמה</button></div>
     <div id="auth-form"></div>
   </div></div>`);
   root.appendChild(wrap);
+  drawIcons();
   const tabs = wrap.querySelectorAll('.tabs button');
   tabs.forEach((b) => b.onclick = () => { tabs.forEach((x) => x.classList.remove('active')); b.classList.add('active');
     b.dataset.t === 'login' ? loginForm() : registerForm(); });
@@ -370,20 +374,20 @@ function registerForm() {
 /* ============================ App shell ============================ */
 const NAV = {
   vet: [
-    { id: 'dashboard', label: 'לוח בקרה', ico: '📊' },
-    { id: 'appointments', label: 'פגישות', ico: '📅', badge: 'pendingAppointments' },
-    { id: 'inquiries', label: 'פניות', ico: '💬', badge: 'openInquiries' },
-    { id: 'tasks', label: 'משימות', ico: '✅', badge: 'openTasks' },
-    { id: 'clients', label: 'לקוחות', ico: '👥' },
-    { id: 'pets', label: 'מטופלים', ico: '🐾' },
-    { id: 'clinic', label: 'המרפאה', ico: '🏥' },
+    { id: 'dashboard', label: 'לוח בקרה', icon: 'layout-dashboard' },
+    { id: 'appointments', label: 'פגישות', icon: 'calendar', badge: 'pendingAppointments' },
+    { id: 'inquiries', label: 'פניות', icon: 'message-circle', badge: 'openInquiries' },
+    { id: 'tasks', label: 'משימות', icon: 'list-checks', badge: 'openTasks' },
+    { id: 'clients', label: 'לקוחות', icon: 'users' },
+    { id: 'pets', label: 'מטופלים', icon: 'paw-print' },
+    { id: 'clinic', label: 'המרפאה', icon: 'building-2' },
   ],
   client: [
-    { id: 'dashboard', label: 'בית', ico: '🏠' },
-    { id: 'pets', label: 'החיות שלי', ico: '🐾' },
-    { id: 'appointments', label: 'הפגישות שלי', ico: '📅' },
-    { id: 'inquiries', label: 'הפניות שלי', ico: '💬' },
-    { id: 'clinic', label: 'המרפאה', ico: '🏥' },
+    { id: 'dashboard', label: 'בית', icon: 'home' },
+    { id: 'pets', label: 'החיות שלי', icon: 'paw-print' },
+    { id: 'appointments', label: 'הפגישות שלי', icon: 'calendar' },
+    { id: 'inquiries', label: 'הפניות שלי', icon: 'message-circle' },
+    { id: 'clinic', label: 'המרפאה', icon: 'building-2' },
   ],
 };
 
@@ -393,7 +397,7 @@ function renderApp() {
   root.innerHTML = '';
   const shell = el(`<div>
     <div class="topbar">
-      <div class="brand">🐾 AmitVet</div>
+      <div class="brand"><span class="mark"><i data-lucide="paw-print"></i></span> AmitVet</div>
       <div class="user"><span>${esc(State.user.name)}</span>
         <span class="role-badge">${isVet ? 'וטרינר ראשי' : 'לקוח'}</span>
         <button class="btn ghost sm" id="logout">יציאה</button></div>
@@ -406,11 +410,12 @@ function renderApp() {
   root.appendChild(shell);
   const nav = shell.querySelector('nav');
   NAV[State.user.role].forEach((item) => {
-    const b = el(`<button data-v="${item.id}"><span class="ico">${item.ico}</span><span>${item.label}</span>${item.badge ? `<span class="count" data-badge="${item.badge}" hidden></span>` : ''}</button>`);
+    const b = el(`<button data-v="${item.id}"><span class="ico"><i data-lucide="${item.icon}"></i></span><span>${item.label}</span>${item.badge ? `<span class="count" data-badge="${item.badge}" hidden></span>` : ''}</button>`);
     b.onclick = () => navigate(item.id);
     nav.appendChild(b);
   });
   shell.querySelector('#logout').onclick = async () => { await api('/auth/logout', { method: 'POST' }); State.user = null; renderAuth(); };
+  drawIcons();
   navigate('dashboard');
   if (isVet) refreshBadges();
 }
