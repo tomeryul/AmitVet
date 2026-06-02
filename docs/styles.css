@@ -199,6 +199,7 @@ input:focus, select:focus, textarea:focus {
 .badge.completed, .badge.resolved { background: var(--ok-soft); color: var(--ok); }
 .badge.cancelled, .badge.urgent { background: var(--danger-soft); color: var(--danger); }
 .badge.normal { background: var(--surface-4); color: var(--text-3); }
+.badge.no_show { background: var(--violet-soft); color: var(--violet); }
 .badge.low { background: var(--surface-3); color: var(--text-muted); }
 
 .empty { text-align: center; padding: 50px 20px; color: var(--text-muted); }

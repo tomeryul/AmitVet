@@ -23,6 +23,8 @@
 - ניהול רשומות רפואיות, חיסונים, **מרשמים/תרופות** ו**מעקב משקל** (עם גרף) לכל חיה
 - **לוח משימות** פנימי (מטלות, מעקבים, התקשרויות) עם דחיפות ויעד
 - **פרטי מרפאה ושעות פעילות** שהלקוחות רואים
+- **תזכורות תור אוטומטיות** באימייל (24ש' + שעתיים לפני תור מאושר) עם אישור/ביטול
+  מתוך ההודעה — וסטטוס `no_show` ויומן תזכורות בכרטיס התור
 - רשימת כל הלקוחות והמטופלים, עם תגי התראה בתפריט
 
 ## 🚀 העלאה לאוויר — GitHub Pages + Supabase (מומלץ)
@@ -39,9 +41,13 @@
    הקובץ [`supabase/schema.sql`](supabase/schema.sql), הדביקו, ולחצו **Run**.
    זה יוצר את כל הטבלאות וכללי האבטחה (כולל התכונות הנוספות).
 
-   > 🔄 **שדרגתם מגרסה קודמת?** אם כבר הרצתם בעבר גרסה ישנה של `schema.sql`,
-   > הריצו עכשיו את [`supabase/migration_v2.sql`](supabase/migration_v2.sql)
-   > כדי להוסיף את הטבלאות החדשות (משימות, מרשמים, משקל, פרטי מרפאה). בטוח להריץ.
+   > 🔄 **שדרגתם מגרסה קודמת?** אם כבר הרצתם בעבר גרסה ישנה, הריצו את קבצי הדלתא
+   > לפי הסדר: [`supabase/migration_v2.sql`](supabase/migration_v2.sql) (משימות,
+   > מרשמים, משקל, מרפאה) ו-[`supabase/migration_v3.sql`](supabase/migration_v3.sql)
+   > (תזכורות תור: `no_show`, `notifications`, `appointment_tokens`). בטוח להריץ.
+   >
+   > 📩 **תזכורות תור אוטומטיות** דורשות הקמה נוספת (Edge Functions + Resend + pg_cron) —
+   > מדריך מלא ב-[`supabase/REMINDERS_SETUP.md`](supabase/REMINDERS_SETUP.md).
 3. **Authentication → Providers → Email**: ודאו ש-Email מופעל, וכבו את
    **"Confirm email"** (כדי שההרשמה תכניס מיד בלי אימות מייל).
 
@@ -112,8 +118,12 @@ docs/               גרסת GitHub Pages
   app.js            ממשק + שכבת נתונים מול Supabase
   styles.css
 supabase/
-  schema.sql        טבלאות + טריגרים + מדיניות RLS (הקמה מאפס)
-  migration_v2.sql  דלתא לתכונות הנוספות (להקמות קיימות)
+  schema.sql          טבלאות + טריגרים + מדיניות RLS (הקמה מאפס)
+  migration_v2.sql    דלתא: משימות, מרשמים, משקל, מרפאה
+  migration_v3.sql    דלתא: תזכורות תור (no_show, notifications, tokens)
+  setup_cron.sql      חיווט pg_cron לתזכורות
+  REMINDERS_SETUP.md  מדריך הקמת התזכורות (Edge Functions + Resend)
+  functions/          Edge Functions: send-reminders, appointment-action, _shared
 server/             שרת Node עצמאי (אופציונלי)
   index.js, db.js, auth.js, routes/
 public/             ממשק לגרסת ה-Node

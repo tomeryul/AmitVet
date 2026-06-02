@@ -252,6 +252,14 @@ async function api(path, opts = {}) {
     };
   }
 
+  // ---------------- notifications log (vet) ----------------
+  if (s[0] === 'notifications' && method === 'GET') {
+    let qy = sb.from('notifications').select('*');
+    if (q.appointment_id) qy = qy.eq('appointment_id', q.appointment_id);
+    const rows = must(await qy.order('send_at', { ascending: true }));
+    return { notifications: rows };
+  }
+
   throw new Error('פעולה לא נתמכת: ' + method + ' ' + raw);
 }
 
@@ -278,7 +286,9 @@ function openModal(title, bodyNode, footNode, onClose) {
 /* ============================ Dictionaries ============================ */
 const APPT_TYPES = { checkup: 'בדיקה כללית', vaccination: 'חיסון', surgery: 'ניתוח', dental: 'טיפול שיניים',
   grooming: 'טיפוח', emergency: 'חירום', follow_up: 'מעקב', other: 'אחר' };
-const APPT_STATUS = { requested: 'ממתין לאישור', confirmed: 'מאושר', completed: 'הושלם', cancelled: 'בוטל' };
+const APPT_STATUS = { requested: 'ממתין לאישור', confirmed: 'מאושר', completed: 'הושלם', cancelled: 'בוטל', no_show: 'לא הגיע' };
+const NOTIF_TEMPLATE = { reminder_24h: 'תזכורת 24 שעות', reminder_2h: 'תזכורת שעתיים' };
+const NOTIF_STATUS = { scheduled: 'מתוזמן', sent: 'נשלח', failed: 'נכשל', cancelled: 'בוטל' };
 const INQ_STATUS = { open: 'פתוח', in_progress: 'בטיפול', resolved: 'נסגר' };
 const PRIORITY = { low: 'נמוכה', normal: 'רגילה', high: 'גבוהה', urgent: 'דחוף' };
 const TASK_STATUS = { open: 'פתוחה', done: 'הושלמה' };
@@ -795,7 +805,7 @@ async function apptForm() {
     catch (e) { toast(e.message, 'err'); } };
 }
 
-function apptDetail(a) {
+async function apptDetail(a) {
   const isVet = State.user.role === 'vet';
   const body = el(`<div>
     <div class="detail-row"><div class="k">סטטוס</div><div class="v"><span class="badge ${a.status}">${APPT_STATUS[a.status]}</span></div></div>
@@ -811,6 +821,17 @@ function apptDetail(a) {
   const actions = [];
   if (isVet) {
     const ctl = body.querySelector('#vetctl');
+    // Reminder log for this appointment (read-only)
+    try {
+      const { notifications } = await api(`/notifications?appointment_id=${a.id}`);
+      if (notifications && notifications.length) {
+        ctl.appendChild(el('<div class="section-title">🔔 תזכורות</div>'));
+        notifications.forEach((nt) => ctl.appendChild(el(
+          `<div class="list-item"><div class="grow"><div class="title">${NOTIF_TEMPLATE[nt.template] || nt.template}</div>
+            <div class="meta">${nt.channel === 'email' ? 'אימייל' : esc(nt.channel)} · מתוזמן ל-${fmtDateTime(nt.send_at)}${nt.sent_at ? ' · נשלח ' + fmtDateTime(nt.sent_at) : ''}${nt.error ? ' · ' + esc(nt.error) : ''}</div></div>
+            <span class="badge ${nt.status === 'sent' ? 'completed' : nt.status === 'failed' ? 'cancelled' : nt.status === 'cancelled' ? 'normal' : 'confirmed'}">${NOTIF_STATUS[nt.status] || nt.status}</span></div>`)));
+      }
+    } catch {}
     ctl.appendChild(el('<div class="section-title">ניהול פגישה</div>'));
     const statusSel = el(`<div class="field"><label>שינוי סטטוס</label><select>
       ${Object.entries(APPT_STATUS).map(([v, l]) => `<option value="${v}" ${v === a.status ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`);
