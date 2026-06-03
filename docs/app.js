@@ -62,11 +62,14 @@ async function api(path, opts = {}) {
     return { pets: rows.map((p) => ({ ...p, owner_name: p.owner?.name, owner_phone: p.owner?.phone })) };
   }
   if (s[0] === 'pets' && s.length === 2 && method === 'GET') {
-    const pet = must(await sb.from('pets').select('*').eq('id', s[1]).single());
-    const vaccinations = must(await sb.from('vaccinations').select('*').eq('pet_id', s[1]).order('date_given', { ascending: false }));
-    const recs = must(await sb.from('medical_records').select('*, vet:profiles!vet_id(name)').eq('pet_id', s[1]).order('visit_date', { ascending: false }));
-    const prescriptions = must(await sb.from('prescriptions').select('*').eq('pet_id', s[1]).order('active', { ascending: false }).order('start_date', { ascending: false }));
-    const weights = must(await sb.from('weight_logs').select('*').eq('pet_id', s[1]).order('measured_at', { ascending: true }));
+    // Run all five reads in parallel (one round-trip instead of five).
+    const [pet, vaccinations, recs, prescriptions, weights] = await Promise.all([
+      sb.from('pets').select('*').eq('id', s[1]).single().then(must),
+      sb.from('vaccinations').select('*').eq('pet_id', s[1]).order('date_given', { ascending: false }).then(must),
+      sb.from('medical_records').select('*, vet:profiles!vet_id(name)').eq('pet_id', s[1]).order('visit_date', { ascending: false }).then(must),
+      sb.from('prescriptions').select('*').eq('pet_id', s[1]).order('active', { ascending: false }).order('start_date', { ascending: false }).then(must),
+      sb.from('weight_logs').select('*').eq('pet_id', s[1]).order('measured_at', { ascending: true }).then(must),
+    ]);
     return { pet, vaccinations, records: recs.map((r) => ({ ...r, vet_name: r.vet?.name })), prescriptions, weights };
   }
   if (s[0] === 'pets' && method === 'POST') {
@@ -117,8 +120,10 @@ async function api(path, opts = {}) {
     return { inquiries: rows.map((i) => ({ ...i, client_name: i.client?.name, pet_name: i.pet?.name, message_count: i.messages?.[0]?.count || 0 })) };
   }
   if (s[0] === 'inquiries' && s.length === 2 && method === 'GET') {
-    const i = must(await sb.from('inquiries').select('*, client:profiles!client_id(name), pet:pets(name), messages(count)').eq('id', s[1]).single());
-    const msgs = must(await sb.from('messages').select('*, sender:profiles!sender_id(name,role)').eq('inquiry_id', s[1]).order('created_at', { ascending: true }));
+    const [i, msgs] = await Promise.all([
+      sb.from('inquiries').select('*, client:profiles!client_id(name), pet:pets(name), messages(count)').eq('id', s[1]).single().then(must),
+      sb.from('messages').select('*, sender:profiles!sender_id(name,role)').eq('inquiry_id', s[1]).order('created_at', { ascending: true }).then(must),
+    ]);
     return { inquiry: { ...i, client_name: i.client?.name, pet_name: i.pet?.name, message_count: i.messages?.[0]?.count || 0 },
       messages: msgs.map((m) => ({ ...m, sender_name: m.sender?.name, sender_role: m.sender?.role })) };
   }
@@ -242,10 +247,12 @@ async function api(path, opts = {}) {
     const todayIso = new Date().toISOString();
     const todayStr = new Date().toISOString().slice(0, 10);
     const in60 = new Date(); in60.setDate(in60.getDate() + 60);
-    const appts = must(await sb.from('appointments').select('*, pet:pets(name)')
-      .gte('scheduled_at', todayIso).in('status', ['requested', 'confirmed']).order('scheduled_at', { ascending: true }));
-    const vaccs = must(await sb.from('vaccinations').select('*, pet:pets(name)')
-      .gte('next_due', todayStr).lte('next_due', in60.toISOString().slice(0, 10)).order('next_due', { ascending: true }));
+    const [appts, vaccs] = await Promise.all([
+      sb.from('appointments').select('*, pet:pets(name)')
+        .gte('scheduled_at', todayIso).in('status', ['requested', 'confirmed']).order('scheduled_at', { ascending: true }).then(must),
+      sb.from('vaccinations').select('*, pet:pets(name)')
+        .gte('next_due', todayStr).lte('next_due', in60.toISOString().slice(0, 10)).order('next_due', { ascending: true }).then(must),
+    ]);
     return {
       appointments: appts.map((a) => ({ ...a, pet_name: a.pet?.name })),
       vaccinations: vaccs.map((v) => ({ ...v, pet_name: v.pet?.name })),
