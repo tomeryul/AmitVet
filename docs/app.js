@@ -263,830 +263,793 @@ async function api(path, opts = {}) {
   throw new Error('פעולה לא נתמכת: ' + method + ' ' + raw);
 }
 
-function toast(msg, type = '') {
-  const t = el(`<div class="toast ${type}">${esc(msg)}</div>`);
-  $('#toast-container').appendChild(t);
-  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; setTimeout(() => t.remove(), 300); }, 3000);
+/* ============================================================================
+   AmitVet Care — mobile UI layer (vanilla JS) over the Supabase data layer.
+   Clean clinical design: medical blue/teal, bottom tabs, sheets, Lucide,
+   bilingual HE/EN. All data still flows through api() above.
+   ============================================================================ */
+
+/* ===================== i18n ===================== */
+(function () {
+  const DICT = {
+    he: {
+      appName: 'אמית-וט', appTag: 'מרפאה וטרינרית',
+      login: 'התחברות', signup: 'הרשמה', email: 'אימייל', password: 'סיסמה',
+      fullName: 'שם מלא', phone: 'טלפון', enter: 'כניסה', createAccount: 'יצירת חשבון',
+      welcome: 'שלום', welcomeBack: 'טוב לראותך שוב',
+      home: 'בית', dashboard: 'לוח בקרה', myPets: 'החיות שלי', pets: 'מטופלים',
+      appts: 'תורים', myAppts: 'התורים שלי', inquiries: 'פניות', messages: 'הודעות',
+      tasks: 'משימות', clients: 'לקוחות', clinic: 'המרפאה', more: 'עוד',
+      pendingAppts: 'בקשות תור', openInquiries: 'פניות פתוחות', openTasks: 'משימות פתוחות',
+      totalClients: 'לקוחות', totalPets: 'מטופלים', todayAppts: 'התורים של היום',
+      upcomingVacc: 'חיסונים מתקרבים', reminders: 'תזכורות', quickActions: 'פעולות מהירות',
+      bookAppt: 'קביעת תור', newInquiry: 'פנייה לווטרינר', addPet: 'הוספת חיה',
+      upcomingAppts: 'התורים הקרובים', allGood: 'הכל מסודר — אין תזכורות כרגע', noToday: 'אין תורים להיום',
+      registered: 'רשומות', recommendedBy: 'מומלץ עד',
+      addNewPet: 'הוספת חיה', petName: 'שם החיה', species: 'סוג', breed: 'גזע',
+      sex: 'מין', birthdate: 'תאריך לידה', weight: 'משקל', notes: 'הערות',
+      age: 'גיל', currentWeight: 'משקל נוכחי', owner: 'בעלים', noPets: 'אין חיות רשומות',
+      noPetsSub: 'הוסיפו את החיה הראשונה כדי להתחיל',
+      weightTrack: 'מעקב משקל', prescriptions: 'תרופות ומרשמים', vaccinations: 'חיסונים',
+      medHistory: 'היסטוריה רפואית', noWeights: 'אין מדידות משקל', noRx: 'אין מרשמים פעילים',
+      noVacc: 'אין חיסונים רשומים', noRecords: 'אין רשומות רפואיות',
+      given: 'ניתן', next: 'הבא', range: 'טווח', medication: 'תרופה', dosage: 'מינון',
+      instructions: 'הוראות', startDate: 'תאריך התחלה', endDate: 'תאריך סיום',
+      diagnosis: 'אבחנה', treatment: 'טיפול', visitDate: 'תאריך ביקור', vaccineName: 'שם החיסון',
+      dateGiven: 'תאריך מתן', nextDue: 'מועד הבא', active: 'פעיל', stopped: 'הופסק',
+      stop: 'הפסקה', activate: 'הפעלה', addWeight: 'הוספת משקל', addRx: 'הוספת מרשם',
+      addVacc: 'הוספת חיסון', addRecord: 'רשומה רפואית',
+      requestAppt: 'בקשת תור', newAppt: 'תור חדש', apptType: 'סוג הביקור',
+      whichPet: 'איזו חיה', dateTime: 'תאריך ושעה', reason: 'סיבת הפנייה',
+      reasonPh: 'תיאור קצר של הסיבה לתור', sendRequest: 'שליחת בקשה',
+      noAppts: 'אין תורים להצגה', noApptsSub: 'קבעו תור חדש בלחיצה אחת',
+      status: 'סטטוס', manageAppt: 'ניהול התור', changeStatus: 'שינוי סטטוס',
+      reschedule: 'קביעה מחדש', vetNotes: 'הערות הווטרינר', saveChanges: 'שמירת שינויים',
+      cancelAppt: 'ביטול התור', confirm: 'אישור', decline: 'דחייה', approve: 'אישור התור',
+      apptDetails: 'פרטי התור', requestSent: 'הבקשה נשלחה — נחזור אליך לאישור', remindersLog: 'תזכורות',
+      newInquiryFull: 'פנייה חדשה', subject: 'נושא', relatedPet: 'חיה רלוונטית',
+      priority: 'דחיפות', messageBody: 'תוכן ההודעה', messagePh: 'תאר/י את השאלה או הבעיה...',
+      send: 'שליחה', noInq: 'אין פניות', noInqSub: 'יש שאלה? כתבו לנו ונחזור אליכם',
+      replyPh: 'כתוב/כתבי תשובה...', manageInq: 'ניהול הפנייה', msgsCount: 'הודעות',
+      newTask: 'משימה חדשה', taskTitle: 'כותרת המשימה', dueDate: 'תאריך יעד',
+      relatedClient: 'לקוח קשור', noTasks: 'אין משימות', noTasksSub: 'הכל בוצע — כל הכבוד',
+      done: 'סיום', reopen: 'החזרה', complete: 'הושלמה', markDone: 'סימון כבוצע',
+      noClients: 'אין לקוחות', since: 'לקוח/ה מאז', petsCount: 'חיות',
+      clinicName: 'שם המרפאה', address: 'כתובת', hours: 'שעות פעילות',
+      emergency: 'מידע לשעת חירום', callClinic: 'התקשרות למרפאה', navigate: 'ניווט',
+      saveClinic: 'שמירת פרטי המרפאה', clinicInfo: 'פרטי המרפאה', clinicEmpty: 'פרטי המרפאה טרם הוזנו',
+      save: 'שמירה', add: 'הוספה', cancel: 'ביטול', edit: 'עריכה', del: 'מחיקה',
+      close: 'סגירה', back: 'חזרה', all: 'הכל', logout: 'יציאה', settings: 'הגדרות',
+      saved: 'נשמר בהצלחה', deleted: 'נמחק', updated: 'עודכן', required: 'שדה חובה',
+      vetTitle: 'וטרינר/ית', clientTitle: 'בעל/ת חיה', kg: 'ק"ג', viewAll: 'הצג הכל',
+      confirmDelete: 'האם למחוק?', language: 'שפה', loginHint: 'התחברות לדוגמה: admin@amitvet.local',
+    },
+    en: {
+      appName: 'AmitVet', appTag: 'Veterinary clinic',
+      login: 'Log in', signup: 'Sign up', email: 'Email', password: 'Password',
+      fullName: 'Full name', phone: 'Phone', enter: 'Enter', createAccount: 'Create account',
+      welcome: 'Hello', welcomeBack: 'Good to see you again',
+      home: 'Home', dashboard: 'Dashboard', myPets: 'My Pets', pets: 'Patients',
+      appts: 'Visits', myAppts: 'Appointments', inquiries: 'Inquiries', messages: 'Messages',
+      tasks: 'Tasks', clients: 'Clients', clinic: 'Clinic', more: 'More',
+      pendingAppts: 'Pending requests', openInquiries: 'Open inquiries', openTasks: 'Open tasks',
+      totalClients: 'Clients', totalPets: 'Patients', todayAppts: "Today's appointments",
+      upcomingVacc: 'Upcoming vaccines', reminders: 'Reminders', quickActions: 'Quick actions',
+      bookAppt: 'Book a visit', newInquiry: 'Ask the vet', addPet: 'Add a pet',
+      upcomingAppts: 'Upcoming visits', allGood: 'All set — no reminders right now', noToday: 'No visits today',
+      registered: 'registered', recommendedBy: 'recommended by',
+      addNewPet: 'Add a pet', petName: 'Pet name', species: 'Species', breed: 'Breed',
+      sex: 'Sex', birthdate: 'Date of birth', weight: 'Weight', notes: 'Notes',
+      age: 'Age', currentWeight: 'Current weight', owner: 'Owner', noPets: 'No pets yet',
+      noPetsSub: 'Add your first pet to get started',
+      weightTrack: 'Weight tracking', prescriptions: 'Prescriptions', vaccinations: 'Vaccinations',
+      medHistory: 'Medical history', noWeights: 'No weight measurements', noRx: 'No active prescriptions',
+      noVacc: 'No vaccinations recorded', noRecords: 'No medical records',
+      given: 'Given', next: 'Next', range: 'Range', medication: 'Medication', dosage: 'Dosage',
+      instructions: 'Instructions', startDate: 'Start date', endDate: 'End date',
+      diagnosis: 'Diagnosis', treatment: 'Treatment', visitDate: 'Visit date', vaccineName: 'Vaccine name',
+      dateGiven: 'Date given', nextDue: 'Next due', active: 'Active', stopped: 'Stopped',
+      stop: 'Stop', activate: 'Activate', addWeight: 'Add weight', addRx: 'Add prescription',
+      addVacc: 'Add vaccination', addRecord: 'Medical record',
+      requestAppt: 'Request a visit', newAppt: 'New appointment', apptType: 'Visit type',
+      whichPet: 'Which pet', dateTime: 'Date & time', reason: 'Reason',
+      reasonPh: 'A short description of the reason', sendRequest: 'Send request',
+      noAppts: 'No appointments', noApptsSub: 'Book a new visit in one tap',
+      status: 'Status', manageAppt: 'Manage appointment', changeStatus: 'Change status',
+      reschedule: 'Reschedule', vetNotes: 'Vet notes', saveChanges: 'Save changes',
+      cancelAppt: 'Cancel visit', confirm: 'Confirm', decline: 'Decline', approve: 'Approve',
+      apptDetails: 'Appointment details', requestSent: "Request sent — we'll confirm shortly", remindersLog: 'Reminders',
+      newInquiryFull: 'New inquiry', subject: 'Subject', relatedPet: 'Related pet',
+      priority: 'Priority', messageBody: 'Message', messagePh: 'Describe your question or concern...',
+      send: 'Send', noInq: 'No inquiries', noInqSub: 'Have a question? Message us anytime',
+      replyPh: 'Write a reply...', manageInq: 'Manage inquiry', msgsCount: 'messages',
+      newTask: 'New task', taskTitle: 'Task title', dueDate: 'Due date',
+      relatedClient: 'Related client', noTasks: 'No tasks', noTasksSub: 'All done — nice work',
+      done: 'Done', reopen: 'Reopen', complete: 'Completed', markDone: 'Mark as done',
+      noClients: 'No clients', since: 'Client since', petsCount: 'pets',
+      clinicName: 'Clinic name', address: 'Address', hours: 'Opening hours',
+      emergency: 'Emergency info', callClinic: 'Call clinic', navigate: 'Directions',
+      saveClinic: 'Save clinic details', clinicInfo: 'Clinic info', clinicEmpty: 'Clinic details not set yet',
+      save: 'Save', add: 'Add', cancel: 'Cancel', edit: 'Edit', del: 'Delete',
+      close: 'Close', back: 'Back', all: 'All', logout: 'Log out', settings: 'Settings',
+      saved: 'Saved', deleted: 'Deleted', updated: 'Updated', required: 'Required field',
+      vetTitle: 'Veterinarian', clientTitle: 'Pet owner', kg: 'kg', viewAll: 'View all',
+      confirmDelete: 'Delete this?', language: 'Language', loginHint: 'Demo login: admin@amitvet.local',
+    },
+  };
+  const saved = (() => { try { return localStorage.getItem('amitvet_lang'); } catch { return null; } })();
+  const I18N = {
+    lang: saved === 'en' ? 'en' : 'he',
+    setLang(l) { I18N.lang = l; try { localStorage.setItem('amitvet_lang', l); } catch {} },
+    dir() { return I18N.lang === 'he' ? 'rtl' : 'ltr'; },
+    locale() { return I18N.lang === 'he' ? 'he-IL' : 'en-GB'; },
+  };
+  window.I18N = I18N;
+  window.t = (k) => { const d = DICT[I18N.lang] || DICT.he; return d[k] != null ? d[k] : (DICT.he[k] != null ? DICT.he[k] : k); };
+  window.tt = (o) => !o ? '' : (o[I18N.lang] != null ? o[I18N.lang] : (o.he || o.en || ''));
+  const parse = (s) => new Date(String(s).replace(' ', 'T'));
+  window.fmtDate = (s) => { if (!s) return '—'; const d = parse(s); return isNaN(d) ? '—' : d.toLocaleDateString(I18N.locale(), { day: '2-digit', month: 'short', year: 'numeric' }); };
+  window.fmtDateShort = (s) => { if (!s) return '—'; const d = parse(s); return isNaN(d) ? '—' : d.toLocaleDateString(I18N.locale(), { day: '2-digit', month: 'short' }); };
+  window.fmtTime = (s) => { if (!s) return ''; const d = parse(s); return isNaN(d) ? '' : d.toLocaleTimeString(I18N.locale(), { hour: '2-digit', minute: '2-digit' }); };
+  window.fmtDateTime = (s) => !s ? '—' : window.fmtDate(s) + ' · ' + window.fmtTime(s);
+  window.relDay = (s) => { if (!s) return ''; const d = parse(s); const t0 = new Date(); t0.setHours(0,0,0,0); const dd = new Date(d); dd.setHours(0,0,0,0); const diff = Math.round((dd - t0) / 86400000); const he = {'0':'היום','1':'מחר','-1':'אתמול'}, en = {'0':'Today','1':'Tomorrow','-1':'Yesterday'}; const m = I18N.lang === 'he' ? he : en; return m[String(diff)] != null ? m[String(diff)] : window.fmtDateShort(s); };
+  window.ageFrom = (b) => { if (!b) return null; const bd = new Date(b), now = new Date(); let y = now.getFullYear()-bd.getFullYear(), m = now.getMonth()-bd.getMonth(); if (m<0){y--;m+=12;} if (I18N.lang==='he') return y>0 ? y+(y===1?' שנה':' שנים') : m+' חודשים'; return y>0 ? y+(y===1?' yr':' yrs') : m+' mo'; };
+})();
+const T = window.t, TT = window.tt;
+
+/* ===================== label dictionaries ===================== */
+const APPT_TYPES = {
+  checkup: { he: 'בדיקה כללית', en: 'Check-up', icon: 'stethoscope' },
+  vaccination: { he: 'חיסון', en: 'Vaccination', icon: 'syringe' },
+  surgery: { he: 'ניתוח', en: 'Surgery', icon: 'scissors' },
+  dental: { he: 'טיפול שיניים', en: 'Dental', icon: 'bone' },
+  grooming: { he: 'טיפוח', en: 'Grooming', icon: 'sparkles' },
+  emergency: { he: 'חירום', en: 'Emergency', icon: 'siren' },
+  follow_up: { he: 'מעקב', en: 'Follow-up', icon: 'repeat' },
+  other: { he: 'אחר', en: 'Other', icon: 'calendar' },
+};
+const APPT_STATUS = { requested: { he: 'ממתין לאישור', en: 'Pending' }, confirmed: { he: 'מאושר', en: 'Confirmed' }, completed: { he: 'הושלם', en: 'Completed' }, cancelled: { he: 'בוטל', en: 'Cancelled' }, no_show: { he: 'לא הגיע', en: 'No-show' } };
+const INQ_STATUS = { open: { he: 'פתוח', en: 'Open' }, in_progress: { he: 'בטיפול', en: 'In progress' }, resolved: { he: 'נסגר', en: 'Resolved' } };
+const PRIORITY = { low: { he: 'נמוכה', en: 'Low' }, normal: { he: 'רגילה', en: 'Normal' }, high: { he: 'גבוהה', en: 'High' }, urgent: { he: 'דחוף', en: 'Urgent' } };
+const SEX = { male: { he: 'זכר', en: 'Male' }, female: { he: 'נקבה', en: 'Female' }, unknown: { he: 'לא ידוע', en: 'Unknown' } };
+const NOTIF_TEMPLATE = { reminder_24h: { he: 'תזכורת 24 שעות', en: '24h reminder' }, reminder_2h: { he: 'תזכורת שעתיים', en: '2h reminder' } };
+
+// Map free-text species (Hebrew or English) → gradient avatar + Lucide icon.
+function speciesMeta(s) {
+  s = (s || '').toLowerCase();
+  if (s.includes('כלב') || s.includes('dog')) return { av: 'av-dog', icon: 'dog' };
+  if (s.includes('חתול') || s.includes('cat')) return { av: 'av-cat', icon: 'cat' };
+  if (s.includes('ציפור') || s.includes('תוכי') || s.includes('bird')) return { av: 'av-bird', icon: 'bird' };
+  if (s.includes('ארנב') || s.includes('rabbit')) return { av: 'av-rabbit', icon: 'rabbit' };
+  return { av: 'av-other', icon: 'paw-print' };
 }
 
-function openModal(title, bodyNode, footNode, onClose) {
-  const overlay = el(`<div class="modal-overlay"><div class="modal">
-    <div class="modal-head"><h3>${esc(title)}</h3><button class="x">×</button></div>
-    <div class="modal-body"></div></div></div>`);
-  overlay.querySelector('.modal-body').appendChild(bodyNode);
-  if (footNode) { const f = el('<div class="modal-foot"></div>'); f.appendChild(footNode); overlay.querySelector('.modal').appendChild(f); }
-  let closed = false;
-  const close = () => { if (closed) return; closed = true; overlay.remove(); if (onClose) onClose(); };
-  overlay.querySelector('.x').onclick = close;
-  overlay.onclick = (e) => { if (e.target === overlay) close(); };
-  $('#modal-root').appendChild(overlay);
-  return { close, overlay };
+/* ===================== small builders ===================== */
+const ic = (name) => `<i data-lucide="${name}"></i>`;
+function petAvatar(species, size) { const m = speciesMeta(species); return `<div class="avatar ${m.av}${size ? ' ' + size : ''}">${ic(m.icon)}</div>`; }
+function personAvatar(isVet, size) { return `<div class="avatar ${isVet ? 'av-vet' : 'av-user'}${size ? ' ' + size : ''}">${ic(isVet ? 'stethoscope' : 'user')}</div>`; }
+function badge(kind, dict, value) { return `<span class="badge b-${kind}"><span class="dot"></span>${esc(TT(dict[value]) || value)}</span>`; }
+function tileFor(status) { return ({ requested: 'tile-warn', confirmed: 'tile-info', completed: 'tile-ok', cancelled: 'tile-danger', no_show: 'tile-violet' }[status] || 'tile-blue'); }
+
+function appbar({ title, sub, leading, trailing, center }) {
+  return `<div class="appbar${center ? ' center' : ''}"><div class="appbar-row">${leading || ''}<div class="grow"><h1>${esc(title)}</h1>${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>${trailing || ''}</div></div>`;
 }
+const iconbtn = (name, attr) => `<button class="iconbtn" ${attr || ''}>${ic(name)}</button>`;
+const backBtn = () => `<button class="iconbtn" data-act="back">${ic('chevron-left')}</button>`.replace('data-lucide="chevron-left"', 'data-lucide="chevron-left" class="chev-back"');
 
-/* ============================ Dictionaries ============================ */
-const APPT_TYPES = { checkup: 'בדיקה כללית', vaccination: 'חיסון', surgery: 'ניתוח', dental: 'טיפול שיניים',
-  grooming: 'טיפוח', emergency: 'חירום', follow_up: 'מעקב', other: 'אחר' };
-const APPT_STATUS = { requested: 'ממתין לאישור', confirmed: 'מאושר', completed: 'הושלם', cancelled: 'בוטל', no_show: 'לא הגיע' };
-const NOTIF_TEMPLATE = { reminder_24h: 'תזכורת 24 שעות', reminder_2h: 'תזכורת שעתיים' };
-const NOTIF_STATUS = { scheduled: 'מתוזמן', sent: 'נשלח', failed: 'נכשל', cancelled: 'בוטל' };
-const INQ_STATUS = { open: 'פתוח', in_progress: 'בטיפול', resolved: 'נסגר' };
-const PRIORITY = { low: 'נמוכה', normal: 'רגילה', high: 'גבוהה', urgent: 'דחוף' };
-const TASK_STATUS = { open: 'פתוחה', done: 'הושלמה' };
-const SEX = { male: 'זכר', female: 'נקבה', unknown: 'לא ידוע' };
-const SPECIES_ICON = (s) => { s = (s || '').toLowerCase();
-  if (s.includes('כלב')) return '🐕'; if (s.includes('חתול')) return '🐈'; if (s.includes('ציפור') || s.includes('תוכי')) return '🦜';
-  if (s.includes('ארנב')) return '🐇'; if (s.includes('סוס')) return '🐎'; if (s.includes('דג')) return '🐠'; return '🐾'; };
-
-function fmtDateTime(s) { if (!s) return '—'; const d = new Date(s.replace(' ', 'T'));
-  return d.toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }); }
-function fmtDate(s) { if (!s) return '—'; const d = new Date(s); return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
-function ageFrom(birth) { if (!birth) return null; const b = new Date(birth), now = new Date();
-  let y = now.getFullYear() - b.getFullYear(); let m = now.getMonth() - b.getMonth();
-  if (m < 0) { y--; m += 12; } return y > 0 ? `${y} שנים` : `${m} חודשים`; }
-
-/* ============================ State ============================ */
+/* ===================== State + navigation ===================== */
 const State = { user: null };
+State.lang = window.I18N.lang;
+State.tab = 'home';
+State.stack = [];
 
-/* ============================ Bootstrap ============================ */
+const Nav = {
+  go(tab) { State.stack = []; State.tab = tab; closeSheet(); render(); },
+  push(name, params) { State.stack.push({ name, params: params || {} }); closeSheet(); render(); },
+  back() { State.stack.pop(); render(); },
+  toggleLang() { window.I18N.setLang(window.I18N.lang === 'he' ? 'en' : 'he'); render(); },
+};
+function $app() { return document.querySelector('.amit-app'); }
+function openSheet(node) { const host = $app(); if (!host) return; closeSheet(); host.appendChild(node); drawIcons(); }
+function closeSheet() { document.querySelectorAll('.sheet-scrim').forEach((s) => s.remove()); }
+function toast(msg, type = '') {
+  let host = document.getElementById('toast-host');
+  if (!host) { host = el('<div class="toast-host" id="toast-host"></div>'); ($app() || document.body).appendChild(host); }
+  const node = el(`<div class="toast ${type}">${type === 'ok' ? ic('check') : ''}<span>${esc(msg)}</span></div>`);
+  host.appendChild(node); drawIcons();
+  setTimeout(() => { node.style.opacity = '0'; node.style.transition = 'opacity .3s'; setTimeout(() => node.remove(), 300); }, 2600);
+}
+
+/* ===================== sheet + form helpers ===================== */
+function sheet({ title, body, foot, onClose }) {
+  const scrim = el(`<div class="sheet-scrim"><div class="sheet"><div class="sheet-grip"></div>
+    <div class="sheet-head"><h3>${esc(title)}</h3><button class="iconbtn ghost" data-x>${ic('x')}</button></div>
+    <div class="sheet-body"></div></div></div>`);
+  const sh = scrim.querySelector('.sheet');
+  const bd = scrim.querySelector('.sheet-body');
+  if (typeof body === 'string') bd.innerHTML = body; else if (Array.isArray(body)) body.forEach((n) => bd.appendChild(n)); else if (body) bd.appendChild(body);
+  if (foot) { const f = el('<div class="sheet-foot"></div>'); (Array.isArray(foot) ? foot : [foot]).forEach((n) => f.appendChild(n)); sh.appendChild(f); }
+  const close = () => { scrim.remove(); if (onClose) onClose(); };
+  scrim.addEventListener('click', (e) => { if (e.target === scrim) close(); });
+  scrim.querySelector('[data-x]').onclick = close;
+  return { scrim, close, body: bd };
+}
+const fieldHtml = (label, inner) => `<div class="field"><label>${esc(label)}</label>${inner}</div>`;
+function optionList(dict, sel) { return Object.entries(dict).map(([v, o]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${esc(TT(o))}</option>`).join(''); }
+async function petOptions(selected) { const { pets } = await api('/pets'); return pets.map((p) => `<option value="${p.id}" ${String(p.id) === String(selected) ? 'selected' : ''}>${esc(p.name)}${p.owner_name ? ' · ' + esc(p.owner_name) : ''}</option>`).join(''); }
+
+/* ===================== boot ===================== */
 (async function init() {
-  if (!CONFIG_OK) { renderSetup(); return; }
-  try { const { user } = await api('/auth/me'); State.user = user; renderApp(); }
-  catch { renderAuth(); }
+  if (!CONFIG_OK) return renderSetup();
+  try { const { user } = await api('/auth/me'); State.user = user; State.tab = user.role === 'vet' ? 'dashboard' : 'home'; render(); }
+  catch { renderLogin(); }
 })();
 
-// Shown when docs/config.js still has placeholder Supabase credentials.
 function renderSetup() {
-  $('#app').innerHTML = '';
-  $('#app').appendChild(el(`<div class="auth-wrap"><div class="auth-card" style="max-width:520px;text-align:right">
-    <div class="auth-logo"><span class="mark"><i data-lucide="paw-print"></i></span></div>
-    <h1>הגדרת AmitVet</h1>
-    <p class="sub">חיבור ל-Supabase לא הושלם עדיין</p>
-    <p style="margin-bottom:12px">כדי שהאתר יעבוד צריך למלא את פרטי ה-Supabase בקובץ
-      <code>docs/config.js</code>:</p>
-    <ol style="padding-in-start:20px;line-height:2;font-size:14px">
-      <li>פתחו פרויקט חינמי ב-<b>supabase.com</b></li>
-      <li>הריצו את הקובץ <code>supabase/schema.sql</code> ב-SQL Editor</li>
-      <li>העתיקו את ה-<b>Project URL</b> וה-<b>anon key</b> (Settings → API) אל <code>docs/config.js</code></li>
-    </ol>
-    <p class="muted mt" style="font-size:13px">הסבר מלא בקובץ <code>README.md</code>.</p>
-  </div></div>`));
+  document.documentElement.dir = 'rtl';
+  $('#app').replaceChildren(el(`<div class="amit-app" dir="rtl"><div class="scr"><div class="scr-scroll" style="display:grid;place-items:center">
+    <div class="card pad-lg" style="max-width:420px;margin:24px">
+      <div class="avatar av-vet lg" style="margin-bottom:14px">${ic('stethoscope')}</div>
+      <h2 style="font-family:var(--font-display);font-size:20px;margin-bottom:8px">הגדרת AmitVet</h2>
+      <p class="muted">חיבור ל-Supabase לא הושלם. מלאו את <code>docs/config.js</code> לפי ה-README.</p>
+    </div></div></div></div>`));
   drawIcons();
 }
 
-/* ============================ Auth screen ============================ */
-function renderAuth() {
-  const root = $('#app');
-  root.innerHTML = '';
-  const wrap = el(`<div class="auth-wrap"><div class="auth-card">
-    <div class="auth-logo"><span class="mark"><i data-lucide="paw-print"></i></span></div>
-    <h1>AmitVet</h1>
-    <p class="sub">המרפאה הווטרינרית שלך, במרחק קליק</p>
-    <div class="tabs"><button data-t="login" class="active">התחברות</button><button data-t="register">הרשמה</button></div>
-    <div id="auth-form"></div>
+/* ===================== login ===================== */
+function renderLogin() {
+  document.documentElement.dir = window.I18N.dir();
+  const app = el(`<div class="amit-app" dir="${window.I18N.dir()}"></div>`);
+  const wrap = el(`<div class="scr"><div class="scr-scroll" style="display:flex;flex-direction:column;justify-content:center;padding:24px">
+    <div style="text-align:center;margin-bottom:8px"><div class="avatar av-vet xl" style="margin:0 auto 16px">${ic('stethoscope')}</div>
+      <h1 style="font-family:var(--font-display);font-weight:700;font-size:30px;letter-spacing:-.02em">${esc(T('appName'))}</h1>
+      <p class="muted" style="margin-top:4px">${esc(T('appTag'))}</p></div>
+    <div class="card pad-lg mt16">
+      <div class="seg mb12" id="ltabs"><button class="active" data-t="login">${esc(T('login'))}</button><button data-t="signup">${esc(T('signup'))}</button></div>
+      <div id="lform"></div>
+    </div>
+    <button class="btn soft sm" id="langtoggle" style="align-self:center;margin-top:18px">${ic('languages')}${window.I18N.lang === 'he' ? 'English' : 'עברית'}</button>
   </div></div>`);
-  root.appendChild(wrap);
-  drawIcons();
-  const tabs = wrap.querySelectorAll('.tabs button');
-  tabs.forEach((b) => b.onclick = () => { tabs.forEach((x) => x.classList.remove('active')); b.classList.add('active');
-    b.dataset.t === 'login' ? loginForm() : registerForm(); });
+  app.appendChild(wrap);
+  $('#app').replaceChildren(app);
+  const tabs = wrap.querySelectorAll('#ltabs button');
+  tabs.forEach((b) => b.onclick = () => { tabs.forEach((x) => x.classList.remove('active')); b.classList.add('active'); b.dataset.t === 'login' ? loginForm() : signupForm(); });
+  wrap.querySelector('#langtoggle').onclick = () => { window.I18N.setLang(window.I18N.lang === 'he' ? 'en' : 'he'); renderLogin(); };
   loginForm();
+  drawIcons();
 }
-
 function loginForm() {
   const f = el(`<form>
-    <div class="field"><label>אימייל</label><input type="email" name="email" required autocomplete="username"></div>
-    <div class="field"><label>סיסמה</label><input type="password" name="password" required autocomplete="current-password"></div>
-    <button class="btn block" type="submit">התחברות</button>
-    <p class="muted mt" style="font-size:13px;text-align:center">לבדיקה: admin@amitvet.local / admin1234</p>
+    ${fieldHtml(T('email'), '<input type="email" name="email" required autocomplete="username">')}
+    ${fieldHtml(T('password'), '<input type="password" name="password" required autocomplete="current-password">')}
+    <button class="btn block lg" type="submit">${esc(T('enter'))}</button>
+    <p class="muted txt-c mt12" style="font-size:12.5px">${esc(T('loginHint'))}</p>
   </form>`);
   f.onsubmit = async (e) => { e.preventDefault(); const btn = f.querySelector('button'); btn.disabled = true;
-    try { const { user } = await api('/auth/login', { method: 'POST', body: { email: f.email.value, password: f.password.value } });
-      State.user = user; renderApp(); } catch (err) { toast(err.message, 'err'); btn.disabled = false; } };
-  $('#auth-form').replaceChildren(f);
-}
-
-function registerForm() {
-  const f = el(`<form>
-    <div class="field"><label>שם מלא</label><input name="name" required></div>
-    <div class="field"><label>אימייל</label><input type="email" name="email" required></div>
-    <div class="field"><label>טלפון</label><input name="phone" placeholder="050-0000000"></div>
-    <div class="field"><label>סיסמה</label><input type="password" name="password" minlength="6" required></div>
-    <button class="btn block" type="submit">יצירת חשבון</button>
-  </form>`);
-  f.onsubmit = async (e) => { e.preventDefault(); const btn = f.querySelector('button'); btn.disabled = true;
-    try { const { user } = await api('/auth/register', { method: 'POST',
-        body: { name: f.name.value, email: f.email.value, phone: f.phone.value, password: f.password.value } });
-      State.user = user; toast('נרשמת בהצלחה!', 'ok'); renderApp(); }
+    try { const { user } = await api('/auth/login', { method: 'POST', body: { email: f.email.value, password: f.password.value } }); State.user = user; State.tab = user.role === 'vet' ? 'dashboard' : 'home'; State.stack = []; render(); }
     catch (err) { toast(err.message, 'err'); btn.disabled = false; } };
-  $('#auth-form').replaceChildren(f);
+  document.getElementById('lform').replaceChildren(f); drawIcons();
+}
+function signupForm() {
+  const f = el(`<form>
+    ${fieldHtml(T('fullName'), '<input name="name" required>')}
+    ${fieldHtml(T('email'), '<input type="email" name="email" required>')}
+    ${fieldHtml(T('phone'), '<input name="phone" placeholder="050-0000000">')}
+    ${fieldHtml(T('password'), '<input type="password" name="password" minlength="6" required>')}
+    <button class="btn block lg" type="submit">${esc(T('createAccount'))}</button>
+  </form>`);
+  f.onsubmit = async (e) => { e.preventDefault(); const btn = f.querySelector('button'); btn.disabled = true;
+    try { const { user } = await api('/auth/register', { method: 'POST', body: { name: f.name.value, email: f.email.value, phone: f.phone.value, password: f.password.value } }); State.user = user; State.tab = 'home'; State.stack = []; render(); }
+    catch (err) { toast(err.message, 'err'); btn.disabled = false; } };
+  document.getElementById('lform').replaceChildren(f); drawIcons();
 }
 
-/* ============================ App shell ============================ */
-const NAV = {
-  vet: [
-    { id: 'dashboard', label: 'לוח בקרה', icon: 'layout-dashboard' },
-    { id: 'appointments', label: 'פגישות', icon: 'calendar', badge: 'pendingAppointments' },
-    { id: 'inquiries', label: 'פניות', icon: 'message-circle', badge: 'openInquiries' },
-    { id: 'tasks', label: 'משימות', icon: 'list-checks', badge: 'openTasks' },
-    { id: 'clients', label: 'לקוחות', icon: 'users' },
-    { id: 'pets', label: 'מטופלים', icon: 'paw-print' },
-    { id: 'clinic', label: 'המרפאה', icon: 'building-2' },
-  ],
-  client: [
-    { id: 'dashboard', label: 'בית', icon: 'home' },
-    { id: 'pets', label: 'החיות שלי', icon: 'paw-print' },
-    { id: 'appointments', label: 'הפגישות שלי', icon: 'calendar' },
-    { id: 'inquiries', label: 'הפניות שלי', icon: 'message-circle' },
-    { id: 'clinic', label: 'המרפאה', icon: 'building-2' },
-  ],
+/* ===================== tab bar + shell ===================== */
+function tabsFor(role, stats) {
+  if (role === 'vet') return [
+    { id: 'dashboard', icon: 'layout-dashboard', label: T('dashboard') },
+    { id: 'appts', icon: 'calendar', label: T('appts'), badge: stats?.pendingAppointments },
+    { id: 'inquiries', icon: 'message-circle', label: T('inquiries'), badge: stats?.openInquiries },
+    { id: 'tasks', icon: 'list-checks', label: T('tasks'), badge: stats?.openTasks },
+    { id: 'more', icon: 'menu', label: T('more') },
+  ];
+  return [
+    { id: 'home', icon: 'home', label: T('home') },
+    { id: 'pets', icon: 'paw-print', label: T('myPets') },
+    { id: 'appts', icon: 'calendar', label: T('myAppts') },
+    { id: 'inquiries', icon: 'message-circle', label: T('messages') },
+    { id: 'clinic', icon: 'building-2', label: T('clinic') },
+  ];
+}
+function tabBar(tabs, active) {
+  const moreActive = active === 'more' || ['pets', 'clients', 'clinic'].includes(active);
+  const bar = el('<div class="tabbar"></div>');
+  tabs.forEach((tb) => {
+    const on = tb.id === 'more' ? moreActive : tb.id === active;
+    const b = el(`<button class="tab${on ? ' active' : ''}"><span class="tab-ic ic">${ic(tb.icon)}${tb.badge ? `<span class="tab-dot">${tb.badge}</span>` : ''}</span><span class="tab-lbl">${esc(tb.label)}</span></button>`);
+    b.onclick = () => tb.id === 'more' ? openMore() : Nav.go(tb.id);
+    bar.appendChild(b);
+  });
+  return bar;
+}
+function fabBtn(label, icon, onClick) { const b = el(`<button class="fab">${ic(icon)}<span>${esc(label)}</span></button>`); b.onclick = onClick; return b; }
+
+const SCREENS = {
+  home: clientHome, dashboard: vetDashboard, pets: petsList, appts: apptsList,
+  inquiries: inquiriesList, clinic: clinicScreen, tasks: tasksScreen, clients: clientsScreen,
 };
 
-function renderApp() {
-  const root = $('#app');
-  const isVet = State.user.role === 'vet';
-  root.innerHTML = '';
-  const shell = el(`<div>
-    <div class="topbar">
-      <div class="brand"><span class="mark"><i data-lucide="paw-print"></i></span> AmitVet</div>
-      <div class="user"><span>${esc(State.user.name)}</span>
-        <span class="role-badge">${isVet ? 'וטרינר ראשי' : 'לקוח'}</span>
-        <button class="btn ghost sm" id="logout">יציאה</button></div>
-    </div>
-    <div class="layout">
-      <aside class="sidebar"><nav></nav></aside>
-      <main class="content" id="view"></main>
-    </div>
-  </div>`);
-  root.appendChild(shell);
-  const nav = shell.querySelector('nav');
-  NAV[State.user.role].forEach((item) => {
-    const b = el(`<button data-v="${item.id}"><span class="ico"><i data-lucide="${item.icon}"></i></span><span>${item.label}</span>${item.badge ? `<span class="count" data-badge="${item.badge}" hidden></span>` : ''}</button>`);
-    b.onclick = () => navigate(item.id);
-    nav.appendChild(b);
-  });
-  shell.querySelector('#logout').onclick = async () => { await api('/auth/logout', { method: 'POST' }); State.user = null; renderAuth(); };
-  drawIcons();
-  navigate('dashboard');
-  if (isVet) refreshBadges();
-}
-
-// Updates the sidebar count badges (vet) from the dashboard stats.
-async function refreshBadges() {
+async function render() {
+  if (!State.user) return renderLogin();
+  // tear down any live chat channel when navigating away
+  if (window.__chatChannel) { try { sb.removeChannel(window.__chatChannel); } catch {} window.__chatChannel = null; }
+  document.documentElement.dir = window.I18N.dir();
+  const app = el(`<div class="amit-app" dir="${window.I18N.dir()}"><div id="screen"><div class="center-fill"><div class="spinner"></div></div></div></div>`);
+  $('#app').replaceChildren(app);
   try {
-    const { stats } = await api('/admin/dashboard');
-    document.querySelectorAll('.sidebar .count[data-badge]').forEach((sp) => {
-      const n = stats[sp.dataset.badge] || 0;
-      if (n > 0) { sp.textContent = n; sp.hidden = false; } else { sp.hidden = true; }
-    });
-  } catch {}
+    const top = State.stack[State.stack.length - 1];
+    let result;
+    if (top) result = await (top.name === 'pet' ? petDetail(top.params) : chatScreen(top.params));
+    else result = await (SCREENS[State.tab] || (State.user.role === 'vet' ? vetDashboard : clientHome))();
+    app.querySelector('#screen').replaceChildren(result.node);
+    if (!top) {
+      app.appendChild(tabBar(tabsFor(State.user.role, result.stats), State.tab));
+      if (result.fab) app.appendChild(result.fab);
+    }
+    app.appendChild(el('<div class="toast-host" id="toast-host"></div>'));
+    drawIcons();
+  } catch (e) { toast(e.message || 'שגיאה', 'err'); }
 }
 
-function navigate(view) {
-  document.querySelectorAll('.sidebar nav button').forEach((b) => b.classList.toggle('active', b.dataset.v === view));
-  const fn = { dashboard: viewDashboard, pets: viewPets, appointments: viewAppointments, inquiries: viewInquiries,
-    clients: viewClients, tasks: viewTasks, clinic: viewClinic }[view];
-  fn();
+// builds a .scr node from an appbar spec + body html/nodes
+function scrNode(appbarSpec, body, { hasTabs, hasFab } = {}) {
+  const s = el('<div class="scr"></div>');
+  s.insertAdjacentHTML('beforeend', appbar(appbarSpec));
+  const sc = el(`<div class="scr-scroll fade-in${hasTabs ? ' has-tabs' : ''}${hasFab ? ' has-fab' : ''}"></div>`);
+  if (typeof body === 'string') sc.innerHTML = body; else if (Array.isArray(body)) body.forEach((n) => n && sc.appendChild(n)); else if (body) sc.appendChild(body);
+  s.appendChild(sc);
+  // wire back button if present
+  const back = s.querySelector('[data-act="back"]'); if (back) back.onclick = () => Nav.back();
+  return s;
 }
 
-function setView(node) { $('#view').replaceChildren(node); }
-function loadingView() { setView(el('<div class="loading-screen"><div class="spinner"></div></div>')); }
-
-/* ============================ Dashboard ============================ */
-async function viewDashboard() {
-  loadingView();
-  if (State.user.role === 'vet') return vetDashboard();
-  return clientDashboard();
+/* ===================== shared row builders ===================== */
+function apptRow(a, showClient) {
+  const tp = APPT_TYPES[a.type] || APPT_TYPES.other;
+  return `<div class="row-item click" data-appt='${encodeURIComponent(JSON.stringify(a))}'>
+    <span class="stat-ic ${tileFor(a.status)}" style="margin:0">${ic(tp.icon)}</span>
+    <div class="grow"><div class="ri-title">${esc(TT(tp))}${a.pet_name ? ' · ' + esc(a.pet_name) : ''}</div>
+      <div class="ri-meta truncate">${esc(window.fmtDateTime(a.scheduled_at))}${showClient && a.client_name ? ' · ' + esc(a.client_name) : ''}</div></div>
+    ${badge(a.status, APPT_STATUS, a.status)}</div>`;
 }
-
-async function vetDashboard() {
-  const { stats, todayAppointments, upcomingVaccinations } = await api('/admin/dashboard');
-  const node = el(`<div>
-    <div class="page-head"><h2>לוח בקרה</h2></div>
-    <div class="grid cols-3 mb">
-      <div class="stat-card"><div class="n">${stats.pendingAppointments}</div><div class="l">בקשות פגישה ממתינות</div></div>
-      <div class="stat-card"><div class="n">${stats.openInquiries}</div><div class="l">פניות פתוחות</div></div>
-      <div class="stat-card"><div class="n">${stats.openTasks || 0}</div><div class="l">משימות פתוחות</div></div>
-      <div class="stat-card"><div class="n">${stats.totalClients}</div><div class="l">לקוחות רשומים</div></div>
-      <div class="stat-card"><div class="n">${stats.totalPets}</div><div class="l">מטופלים</div></div>
-    </div>
-    <div class="section-title">📅 הפגישות של היום</div>
-    <div id="today"></div>
-    <div class="section-title">💉 חיסונים מתקרבים (30 יום)</div>
-    <div id="vacc"></div>
-  </div>`);
-  const today = node.querySelector('#today');
-  if (!todayAppointments.length) today.appendChild(el('<p class="muted">אין פגישות מתוכננות להיום.</p>'));
-  todayAppointments.forEach((a) => today.appendChild(apptListItem(a)));
-  const vacc = node.querySelector('#vacc');
-  if (!upcomingVaccinations.length) vacc.appendChild(el('<p class="muted">אין חיסונים שמועדם מתקרב.</p>'));
-  upcomingVaccinations.forEach((v) => vacc.appendChild(el(
-    `<div class="list-item"><div class="avatar">💉</div><div class="grow">
-      <div class="title">${esc(v.vaccine_name)} · ${esc(v.pet_name)}</div>
-      <div class="meta">בעלים: ${esc(v.owner_name)} · מועד הבא: ${fmtDate(v.next_due)}</div></div></div>`)));
-  setView(node);
+function inqRow(i, showClient) {
+  return `<div class="row-item click" data-inq="${i.id}">
+    <span class="stat-ic ${i.status === 'resolved' ? 'tile-ok' : 'tile-info'}" style="margin:0">${ic('message-circle')}</span>
+    <div class="grow"><div class="ri-title truncate">${esc(i.subject)}</div>
+      <div class="ri-meta truncate">${showClient && i.client_name ? esc(i.client_name) + ' · ' : ''}${i.message_count || 0} ${esc(T('msgsCount'))} · ${esc(window.relDay(i.updated_at))}</div></div>
+    ${badge(i.status, INQ_STATUS, i.status)}</div>`;
 }
+function wirePetCards(node) { node.querySelectorAll('[data-pet]').forEach((c) => c.onclick = () => Nav.push('pet', { id: c.dataset.pet })); }
+function wireApptRows(node) { node.querySelectorAll('[data-appt]').forEach((c) => c.onclick = () => apptManage(JSON.parse(decodeURIComponent(c.dataset.appt)))); }
+function wireInqRows(node) { node.querySelectorAll('[data-inq]').forEach((c) => c.onclick = () => Nav.push('chat', { id: c.dataset.inq })); }
 
-async function clientDashboard() {
-  const [{ appointments }, { pets }, reminders] = await Promise.all([
-    api('/appointments'), api('/pets'), api('/reminders')]);
+/* ===================== CLIENT: home ===================== */
+async function clientHome() {
+  const [{ appointments }, { pets }, reminders] = await Promise.all([api('/appointments'), api('/pets'), api('/reminders')]);
   const upcoming = appointments.filter((a) => a.status !== 'cancelled' && a.status !== 'completed').slice(0, 3);
-  const node = el(`<div>
-    <div class="page-head"><h2>שלום, ${esc(State.user.name)} 👋</h2></div>
-    <div class="grid cols-3 mb">
-      <div class="card click" id="q-appt"><div class="avatar">📅</div><h3 class="mt">קביעת פגישה</h3><p class="muted">בקש/י תור לחיה שלך</p></div>
-      <div class="card click" id="q-inq"><div class="avatar">💬</div><h3 class="mt">פנייה לווטרינר</h3><p class="muted">יש לך שאלה? כתוב/כתבי לנו</p></div>
-      <div class="card click" id="q-pet"><div class="avatar">🐾</div><h3 class="mt">הוספת חיה</h3><p class="muted">${pets.length} חיות רשומות</p></div>
-    </div>
-    <div class="section-title">🔔 תזכורות</div>
-    <div id="reminders"></div>
-    <div class="section-title">📅 הפגישות הקרובות שלך</div>
-    <div id="up"></div>
-  </div>`);
-  node.querySelector('#q-appt').onclick = () => navigate('appointments');
-  node.querySelector('#q-inq').onclick = () => navigate('inquiries');
-  node.querySelector('#q-pet').onclick = () => navigate('pets');
-
-  const rem = node.querySelector('#reminders');
-  const vaccDue = reminders.vaccinations || [];
-  const apptSoon = (reminders.appointments || []).slice(0, 3);
-  if (!vaccDue.length && !apptSoon.length) rem.appendChild(el('<p class="muted">אין תזכורות כרגע — הכל מסודר! ✨</p>'));
-  vaccDue.forEach((v) => rem.appendChild(el(
-    `<div class="list-item"><div class="avatar">💉</div><div class="grow">
-      <div class="title">חיסון ${esc(v.vaccine_name)}${v.pet_name ? ' · ' + esc(v.pet_name) : ''}</div>
-      <div class="meta">מועד מומלץ: ${fmtDate(v.next_due)}</div></div>
-      <span class="badge high">חיסון מתקרב</span></div>`)));
-  apptSoon.forEach((a) => rem.appendChild(el(
-    `<div class="list-item"><div class="avatar">📅</div><div class="grow">
-      <div class="title">${APPT_TYPES[a.type] || a.type}${a.pet_name ? ' · ' + esc(a.pet_name) : ''}</div>
-      <div class="meta">${fmtDateTime(a.scheduled_at)}</div></div>
-      <span class="badge ${a.status}">${APPT_STATUS[a.status]}</span></div>`)));
-
-  const up = node.querySelector('#up');
-  if (!upcoming.length) up.appendChild(el('<p class="muted">אין פגישות קרובות. אפשר לקבוע תור מהכרטיס למעלה.</p>'));
-  upcoming.forEach((a) => up.appendChild(apptListItem(a)));
-  setView(node);
-}
-
-/* ============================ Pets ============================ */
-async function viewPets() {
-  loadingView();
-  const { pets } = await api('/pets');
-  const isVet = State.user.role === 'vet';
-  const node = el(`<div>
-    <div class="page-head"><h2>${isVet ? 'מטופלים' : 'החיות שלי'}</h2>
-      ${isVet ? '' : '<button class="btn" id="add">＋ הוספת חיה</button>'}</div>
-    <div class="grid cols-2" id="list"></div></div>`);
-  const list = node.querySelector('#list');
-  if (!pets.length) list.appendChild(el(`<div class="empty"><span class="ico">🐾</span>אין חיות רשומות עדיין.</div>`));
-  pets.forEach((p) => {
-    const c = el(`<div class="card click">
-      <div style="display:flex;gap:14px;align-items:center">
-        <div class="avatar" style="width:54px;height:54px;font-size:28px">${SPECIES_ICON(p.species)}</div>
-        <div><div class="title" style="font-size:18px;font-weight:700">${esc(p.name)}</div>
-        <div class="meta">${esc(p.species)}${p.breed ? ' · ' + esc(p.breed) : ''}${ageFrom(p.birthdate) ? ' · ' + ageFrom(p.birthdate) : ''}</div>
-        ${isVet && p.owner_name ? `<div class="meta">בעלים: ${esc(p.owner_name)} · ${esc(p.owner_phone || '')}</div>` : ''}</div>
-      </div></div>`);
-    c.onclick = () => openPetDetail(p.id);
-    list.appendChild(c);
-  });
-  if (!isVet) node.querySelector('#add').onclick = () => petForm();
-  setView(node);
-}
-
-function petForm(pet) {
-  const f = el(`<form>
-    <div class="field"><label>שם החיה *</label><input name="name" required value="${esc(pet?.name || '')}"></div>
-    <div class="row">
-      <div class="field"><label>סוג *</label><input name="species" required placeholder="כלב / חתול / ..." value="${esc(pet?.species || '')}"></div>
-      <div class="field"><label>גזע</label><input name="breed" value="${esc(pet?.breed || '')}"></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>מין</label><select name="sex">
-        <option value="unknown">לא ידוע</option><option value="male">זכר</option><option value="female">נקבה</option></select></div>
-      <div class="field"><label>תאריך לידה</label><input type="date" name="birthdate" value="${esc(pet?.birthdate || '')}"></div>
-      <div class="field"><label>משקל (ק"ג)</label><input type="number" step="0.1" name="weight_kg" value="${esc(pet?.weight_kg || '')}"></div>
-    </div>
-    <div class="field"><label>הערות</label><textarea name="notes">${esc(pet?.notes || '')}</textarea></div>
-  </form>`);
-  if (pet) f.sex.value = pet.sex || 'unknown';
-  const submit = el(`<button class="btn">${pet ? 'שמירה' : 'הוספה'}</button>`);
-  const cancel = el('<button class="btn ghost">ביטול</button>');
-  const { close } = openModal(pet ? 'עריכת פרטי חיה' : 'הוספת חיה', f, wrapBtns(submit, cancel));
-  cancel.onclick = close;
-  submit.onclick = async () => {
-    const body = { name: f.name.value, species: f.species.value, breed: f.breed.value, sex: f.sex.value,
-      birthdate: f.birthdate.value, weight_kg: f.weight_kg.value, notes: f.notes.value };
-    if (!body.name || !body.species) return toast('שם וסוג הם שדות חובה', 'err');
-    try { await api(pet ? `/pets/${pet.id}` : '/pets', { method: pet ? 'PUT' : 'POST', body });
-      toast('נשמר בהצלחה', 'ok'); close(); viewPets(); } catch (e) { toast(e.message, 'err'); }
-  };
-}
-
-async function openPetDetail(id) {
-  const { pet, vaccinations, records, prescriptions = [], weights = [] } = await api(`/pets/${id}`);
-  const isVet = State.user.role === 'vet';
-  const latestWeight = weights.length ? weights[weights.length - 1].weight_kg : pet.weight_kg;
+  const trailing = iconbtn('settings-2', 'data-act="settings"');
   const body = el(`<div>
-    <div class="detail-row"><div class="k">סוג / גזע</div><div class="v">${esc(pet.species)}${pet.breed ? ' · ' + esc(pet.breed) : ''}</div></div>
-    <div class="detail-row"><div class="k">מין</div><div class="v">${SEX[pet.sex] || '—'}</div></div>
-    <div class="detail-row"><div class="k">גיל</div><div class="v">${ageFrom(pet.birthdate) || '—'}${pet.birthdate ? ' (' + fmtDate(pet.birthdate) + ')' : ''}</div></div>
-    <div class="detail-row"><div class="k">משקל נוכחי</div><div class="v">${latestWeight ? latestWeight + ' ק"ג' : '—'}</div></div>
-    <div class="detail-row"><div class="k">הערות</div><div class="v">${esc(pet.notes) || '—'}</div></div>
-
-    <div class="section-title">⚖️ מעקב משקל ${isVet ? '<button class="btn sm" id="add-wt">＋</button>' : ''}</div>
-    <div id="wt"></div>
-
-    <div class="section-title">💊 מרשמים ותרופות ${isVet ? '<button class="btn sm" id="add-rx">＋</button>' : ''}</div>
-    <div id="rx"></div>
-
-    <div class="section-title">💉 חיסונים ${isVet ? '<button class="btn sm" id="add-vac">＋</button>' : ''}</div>
-    <div id="vac"></div>
-
-    <div class="section-title">📋 היסטוריה רפואית ${isVet ? '<button class="btn sm" id="add-rec">＋</button>' : ''}</div>
-    <div id="rec"></div>
+    <div class="section">
+      <div class="grid c3">
+        <button class="card click" data-q="appts" style="text-align:center;padding:18px 8px"><span class="stat-ic tile-blue" style="margin:0 auto 8px">${ic('calendar-plus')}</span><div style="font-weight:700;font-size:13px">${esc(T('bookAppt'))}</div></button>
+        <button class="card click" data-q="inquiries" style="text-align:center;padding:18px 8px"><span class="stat-ic tile-teal" style="margin:0 auto 8px">${ic('message-square-plus')}</span><div style="font-weight:700;font-size:13px">${esc(T('newInquiry'))}</div></button>
+        <button class="card click" data-q="pets" style="text-align:center;padding:18px 8px"><span class="stat-ic tile-violet" style="margin:0 auto 8px">${ic('plus')}</span><div style="font-weight:700;font-size:13px">${esc(T('addPet'))}</div></button>
+      </div>
+    </div>
+    <div class="section"><div class="section-head"><h2>${esc(T('reminders'))}</h2></div><div class="stack sm" id="rem"></div></div>
+    <div class="section"><div class="section-head"><h2>${esc(T('upcomingAppts'))}</h2></div><div class="stack sm" id="up"></div></div>
   </div>`);
+  const rem = body.querySelector('#rem');
+  const vacc = reminders.vaccinations || [], soon = (reminders.appointments || []).slice(0, 3);
+  if (!vacc.length && !soon.length) rem.innerHTML = `<div class="card flat muted" style="text-align:center">${esc(T('allGood'))}</div>`;
+  vacc.forEach((v) => rem.insertAdjacentHTML('beforeend', `<div class="row-item"><span class="stat-ic tile-warn" style="margin:0">${ic('syringe')}</span><div class="grow"><div class="ri-title">${esc(v.vaccine_name)}${v.pet_name ? ' · ' + esc(v.pet_name) : ''}</div><div class="ri-meta">${esc(T('nextDue'))}: ${esc(window.fmtDate(v.next_due))}</div></div></div>`));
+  soon.forEach((a) => rem.insertAdjacentHTML('beforeend', apptRow(a, false)));
+  const up = body.querySelector('#up');
+  if (!upcoming.length) up.innerHTML = `<div class="card flat muted" style="text-align:center">${esc(T('noToday'))}</div>`;
+  upcoming.forEach((a) => up.insertAdjacentHTML('beforeend', apptRow(a, false)));
+  wireApptRows(body);
+  body.querySelectorAll('[data-q]').forEach((b) => b.onclick = () => Nav.go(b.dataset.q));
+  const node = scrNode({ title: T('welcome') + ', ' + State.user.name.split(' ')[0], sub: T('welcomeBack'), trailing }, body, { hasTabs: true });
+  wireSettings(node);
+  return { node };
+}
 
-  // Weight: mini chart + log
+/* ===================== VET: dashboard ===================== */
+async function vetDashboard() {
+  const d = await api('/admin/dashboard');
+  const s = d.stats;
+  const trailing = iconbtn('settings-2', 'data-act="settings"');
+  const statCard = (n, label, icon, tile) => `<div class="stat"><span class="stat-ic ${tile}">${ic(icon)}</span><div class="stat-n">${n}</div><div class="stat-l">${esc(label)}</div></div>`;
+  const body = el(`<div>
+    <div class="section"><div class="grid c2">
+      ${statCard(s.pendingAppointments, T('pendingAppts'), 'calendar-clock', 'tile-warn')}
+      ${statCard(s.openInquiries, T('openInquiries'), 'message-circle', 'tile-info')}
+      ${statCard(s.openTasks || 0, T('openTasks'), 'list-checks', 'tile-violet')}
+      ${statCard(s.totalPets, T('totalPets'), 'paw-print', 'tile-teal')}
+    </div></div>
+    <div class="section"><div class="section-head"><h2>${esc(T('todayAppts'))}</h2></div><div class="stack sm" id="today"></div></div>
+    <div class="section"><div class="section-head"><h2>${esc(T('upcomingVacc'))}</h2></div><div class="stack sm" id="vacc"></div></div>
+  </div>`);
+  const today = body.querySelector('#today');
+  if (!d.todayAppointments.length) today.innerHTML = `<div class="card flat muted" style="text-align:center">${esc(T('noToday'))}</div>`;
+  d.todayAppointments.forEach((a) => today.insertAdjacentHTML('beforeend', apptRow(a, true)));
+  const vacc = body.querySelector('#vacc');
+  if (!d.upcomingVaccinations.length) vacc.innerHTML = `<div class="card flat muted" style="text-align:center">—</div>`;
+  d.upcomingVaccinations.forEach((v) => vacc.insertAdjacentHTML('beforeend', `<div class="row-item"><span class="stat-ic tile-warn" style="margin:0">${ic('syringe')}</span><div class="grow"><div class="ri-title">${esc(v.vaccine_name)} · ${esc(v.pet_name)}</div><div class="ri-meta">${esc(v.owner_name || '')} · ${esc(T('nextDue'))}: ${esc(window.fmtDate(v.next_due))}</div></div></div>`));
+  wireApptRows(body);
+  const node = scrNode({ title: T('dashboard'), sub: TT({ he: 'ד״ר', en: 'Dr.' }) + ' ' + State.user.name, trailing }, body, { hasTabs: true });
+  wireSettings(node);
+  return { node, stats: s };
+}
+
+/* ===================== pets ===================== */
+async function petsList() {
+  const isVet = State.user.role === 'vet';
+  const { pets } = await api('/pets');
+  const body = el('<div class="section"><div class="stack" id="list"></div></div>');
+  const list = body.querySelector('#list');
+  if (!pets.length) list.innerHTML = `<div class="empty"><div class="empty-ic">${ic('paw-print')}</div><div class="empty-t">${esc(T('noPets'))}</div><div class="empty-s">${esc(T('noPetsSub'))}</div></div>`;
+  pets.forEach((p) => list.insertAdjacentHTML('beforeend', `<div class="row-item click" data-pet="${p.id}">${petAvatar(p.species)}
+    <div class="grow"><div class="ri-title">${esc(p.name)}</div><div class="ri-meta truncate">${esc(p.species)}${p.breed ? ' · ' + esc(p.breed) : ''}${window.ageFrom(p.birthdate) ? ' · ' + window.ageFrom(p.birthdate) : ''}${isVet && p.owner_name ? ' · ' + esc(p.owner_name) : ''}</div></div>
+    <span class="row-chev">${ic('chevron-left')}</span></div>`));
+  wirePetCards(body);
+  const node = scrNode({ title: isVet ? T('pets') : T('myPets'), leading: isVet ? backBtnIfMore() : '' }, body, { hasTabs: true, hasFab: !isVet });
+  return { node, fab: isVet ? null : fabBtn(T('addPet'), 'plus', () => petForm()) };
+}
+function backBtnIfMore() { return ''; } // vet reaches pets via More; tab bar handles nav
+
+async function petDetail({ id }) {
+  const isVet = State.user.role === 'vet';
+  const { pet, vaccinations, records, prescriptions = [], weights = [] } = await api(`/pets/${id}`);
+  const latest = weights.length ? weights[weights.length - 1].weight_kg : pet.weight_kg;
+  const sub = `${esc(pet.species)}${pet.breed ? ' · ' + esc(pet.breed) : ''}`;
+  const body = el(`<div>
+    <div class="section"><div class="card" style="display:flex;gap:14px;align-items:center">
+      ${petAvatar(pet.species, 'lg')}
+      <div class="grow"><div style="font-family:var(--font-display);font-weight:700;font-size:21px">${esc(pet.name)}</div>
+        <div class="muted" style="font-size:13.5px">${sub}</div>
+        <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+          <span class="pill-tag">${ic('venus-mars')}${esc(TT(SEX[pet.sex]) || '—')}</span>
+          ${window.ageFrom(pet.birthdate) ? `<span class="pill-tag">${ic('cake')}${window.ageFrom(pet.birthdate)}</span>` : ''}
+          ${latest ? `<span class="pill-tag">${ic('weight')}${latest} ${esc(T('kg'))}</span>` : ''}
+        </div></div></div>
+      ${pet.notes ? `<div class="card flat mt12" style="font-size:13.5px">${esc(pet.notes)}</div>` : ''}
+    </div>
+    <div class="section"><div class="section-head"><h2>${esc(T('weightTrack'))}</h2>${isVet ? `<button class="link" data-add="weight">${ic('plus')}${esc(T('add'))}</button>` : ''}</div><div id="wt"></div></div>
+    <div class="section"><div class="section-head"><h2>${esc(T('prescriptions'))}</h2>${isVet ? `<button class="link" data-add="rx">${ic('plus')}${esc(T('add'))}</button>` : ''}</div><div class="stack sm" id="rx"></div></div>
+    <div class="section"><div class="section-head"><h2>${esc(T('vaccinations'))}</h2>${isVet ? `<button class="link" data-add="vacc">${ic('plus')}${esc(T('add'))}</button>` : ''}</div><div class="stack sm" id="vc"></div></div>
+    <div class="section"><div class="section-head"><h2>${esc(T('medHistory'))}</h2>${isVet ? `<button class="link" data-add="record">${ic('plus')}${esc(T('add'))}</button>` : ''}</div><div class="stack sm" id="mr"></div></div>
+  </div>`);
+  // weight chart
   const wt = body.querySelector('#wt');
-  if (!weights.length) { wt.appendChild(el('<p class="muted">אין מדידות משקל.</p>')); }
-  else {
-    wt.appendChild(weightChart(weights));
-    weights.slice().reverse().forEach((w) => { const item = el(
-      `<div class="list-item"><div class="grow"><div class="title">${w.weight_kg} ק"ג</div>
-        <div class="meta">${fmtDate(w.measured_at)}${w.notes ? ' · ' + esc(w.notes) : ''}</div></div></div>`);
-      if (isVet) { const d = el('<button class="btn ghost sm">מחק</button>'); d.onclick = async () => {
-        await api(`/weights/${w.id}`, { method: 'DELETE' }); close(); openPetDetail(id); }; item.appendChild(d); }
-      wt.appendChild(item); });
-  }
-
-  // Prescriptions
+  if (weights.length >= 2) wt.appendChild(weightChart(weights)); else wt.innerHTML = `<div class="card flat muted" style="text-align:center">${esc(T('noWeights'))}</div>`;
   const rx = body.querySelector('#rx');
-  if (!prescriptions.length) rx.appendChild(el('<p class="muted">אין מרשמים.</p>'));
-  prescriptions.forEach((p) => { const item = el(
-    `<div class="list-item"><div class="grow">
-      <div class="title">${esc(p.medication)}${p.dosage ? ' · ' + esc(p.dosage) : ''}</div>
-      <div class="meta">${p.instructions ? esc(p.instructions) + ' · ' : ''}החל מ-${fmtDate(p.start_date)}${p.end_date ? ' עד ' + fmtDate(p.end_date) : ''}</div></div>
-      <span class="badge ${p.active ? 'confirmed' : 'cancelled'}">${p.active ? 'פעיל' : 'הופסק'}</span></div>`);
-    if (isVet) { const t = el(`<button class="btn ghost sm">${p.active ? 'הפסק' : 'הפעל'}</button>`);
-      t.onclick = async () => { await api(`/prescriptions/${p.id}`, { method: 'PATCH', body: { active: !p.active } }); close(); openPetDetail(id); }; item.appendChild(t); }
-    rx.appendChild(item); });
+  if (!prescriptions.length) rx.innerHTML = `<div class="card flat muted" style="text-align:center">${esc(T('noRx'))}</div>`;
+  prescriptions.forEach((p) => { const row = el(`<div class="row-item"><span class="stat-ic ${p.active ? 'tile-ok' : 'tile-danger'}" style="margin:0">${ic('pill')}</span>
+    <div class="grow"><div class="ri-title">${esc(p.medication)}${p.dosage ? ' · ' + esc(p.dosage) : ''}</div><div class="ri-meta truncate">${p.instructions ? esc(p.instructions) + ' · ' : ''}${esc(window.fmtDate(p.start_date))}${p.end_date ? ' – ' + esc(window.fmtDate(p.end_date)) : ''}</div></div>
+    <span class="badge ${p.active ? 'b-active' : 'b-stopped'}">${esc(p.active ? T('active') : T('stopped'))}</span></div>`);
+    if (isVet) { row.style.cursor = 'pointer'; row.onclick = async () => { await api(`/prescriptions/${p.id}`, { method: 'PATCH', body: { active: !p.active } }); render(); }; }
+    rx.appendChild(row); });
+  const vc = body.querySelector('#vc');
+  if (!vaccinations.length) vc.innerHTML = `<div class="card flat muted" style="text-align:center">${esc(T('noVacc'))}</div>`;
+  vaccinations.forEach((v) => vc.insertAdjacentHTML('beforeend', `<div class="row-item"><span class="stat-ic tile-teal" style="margin:0">${ic('syringe')}</span><div class="grow"><div class="ri-title">${esc(v.vaccine_name)}</div><div class="ri-meta truncate">${esc(T('given'))}: ${esc(window.fmtDate(v.date_given))}${v.next_due ? ' · ' + esc(T('next')) + ': ' + esc(window.fmtDate(v.next_due)) : ''}</div></div></div>`));
+  const mr = body.querySelector('#mr');
+  if (!records.length) mr.innerHTML = `<div class="card flat muted" style="text-align:center">${esc(T('noRecords'))}</div>`;
+  records.forEach((r) => mr.insertAdjacentHTML('beforeend', `<div class="row-item"><span class="stat-ic tile-blue" style="margin:0">${ic('clipboard-list')}</span><div class="grow"><div class="ri-title">${esc(window.fmtDate(r.visit_date))}${r.diagnosis ? ' · ' + esc(r.diagnosis) : ''}</div><div class="ri-meta truncate">${r.treatment ? esc(r.treatment) : ''}${r.vet_name ? ' · ' + esc(r.vet_name) : ''}</div></div></div>`));
 
-  const vac = body.querySelector('#vac');
-  if (!vaccinations.length) vac.appendChild(el('<p class="muted">אין חיסונים רשומים.</p>'));
-  vaccinations.forEach((v) => vac.appendChild(el(
-    `<div class="list-item"><div class="grow"><div class="title">${esc(v.vaccine_name)}</div>
-      <div class="meta">ניתן: ${fmtDate(v.date_given)}${v.next_due ? ' · הבא: ' + fmtDate(v.next_due) : ''}${v.notes ? ' · ' + esc(v.notes) : ''}</div></div></div>`)));
-  const rec = body.querySelector('#rec');
-  if (!records.length) rec.appendChild(el('<p class="muted">אין רשומות רפואיות.</p>'));
-  records.forEach((r) => rec.appendChild(el(
-    `<div class="list-item"><div class="grow"><div class="title">${fmtDate(r.visit_date)}${r.diagnosis ? ' · ' + esc(r.diagnosis) : ''}</div>
-      <div class="meta">${r.treatment ? 'טיפול: ' + esc(r.treatment) : ''}${r.notes ? ' · ' + esc(r.notes) : ''}${r.vet_name ? ' · ' + esc(r.vet_name) : ''}</div></div></div>`)));
-
-  let foot;
-  if (!isVet) {
-    const edit = el('<button class="btn ghost">עריכה</button>');
-    const del = el('<button class="btn danger">מחיקה</button>');
-    edit.onclick = () => { close(); petForm(pet); };
-    del.onclick = async () => { if (!confirm('למחוק את ' + pet.name + '?')) return;
-      await api(`/pets/${pet.id}`, { method: 'DELETE' }); toast('נמחק', 'ok'); close(); viewPets(); };
-    foot = wrapBtns(edit, del);
-  }
-  const { close } = openModal(`${SPECIES_ICON(pet.species)} ${pet.name}`, body, foot);
+  const trailing = isVet ? '' : `<button class="iconbtn" data-act="editpet">${ic('pencil')}</button>`;
+  const node = scrNode({ title: pet.name, sub, leading: backBtn(), trailing }, body);
   if (isVet) {
-    body.querySelector('#add-vac').onclick = () => { close(); vaccinationForm(pet.id); };
-    body.querySelector('#add-rec').onclick = () => { close(); recordForm(pet.id); };
-    body.querySelector('#add-rx').onclick = () => { close(); prescriptionForm(pet.id); };
-    body.querySelector('#add-wt').onclick = () => { close(); weightForm(pet.id); };
+    body.querySelector('[data-add="weight"]').onclick = () => weightForm(id);
+    body.querySelector('[data-add="rx"]').onclick = () => rxForm(id);
+    body.querySelector('[data-add="vacc"]').onclick = () => vaccForm(id);
+    body.querySelector('[data-add="record"]').onclick = () => recordForm(id);
+  } else {
+    node.querySelector('[data-act="editpet"]').onclick = () => petForm(pet);
   }
+  return { node };
 }
 
-// Simple inline SVG line chart of weight over time.
 function weightChart(weights) {
-  const w = 300, h = 90, pad = 8;
+  const w = 320, h = 110, pad = 14, padTop = 16, padBot = 22;
   const vals = weights.map((x) => Number(x.weight_kg));
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const span = max - min || 1;
-  const n = weights.length;
-  const xAt = (i) => n === 1 ? w / 2 : pad + (i * (w - 2 * pad)) / (n - 1);
-  const yAt = (v) => h - pad - ((v - min) / span) * (h - 2 * pad);
-  const pts = vals.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`).join(' ');
-  const dots = vals.map((v, i) => `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="3" fill="#0d9488"/>`).join('');
-  return el(`<div class="card" style="padding:10px;margin-bottom:10px">
-    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:90px" preserveAspectRatio="none">
-      <polyline points="${pts}" fill="none" stroke="#0d9488" stroke-width="2"/>${dots}
+  const min = Math.min(...vals), max = Math.max(...vals), span = (max - min) || 1, n = weights.length;
+  const xAt = (i) => pad + (i * (w - 2 * pad)) / (n - 1);
+  const yAt = (v) => padTop + (1 - (v - min) / span) * (h - padTop - padBot);
+  const line = vals.map((v, i) => (i ? 'L' : 'M') + xAt(i).toFixed(1) + ' ' + yAt(v).toFixed(1)).join(' ');
+  const area = line + ` L${xAt(n - 1).toFixed(1)} ${h - padBot} L${xAt(0).toFixed(1)} ${h - padBot} Z`;
+  const dots = vals.map((v, i) => `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="${i === n - 1 ? 4.5 : 3}" fill="#fff" stroke="#0fa39a" stroke-width="2.5"/>`).join('');
+  return el(`<div class="card flat" style="padding:14px" dir="ltr">
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:110px;display:block" preserveAspectRatio="none">
+      <defs><linearGradient id="wfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="rgba(15,163,154,.28)"/><stop offset="100%" stop-color="rgba(15,163,154,0)"/></linearGradient></defs>
+      <path d="${area}" fill="url(#wfill)"/><path d="${line}" fill="none" stroke="#0fa39a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>${dots}
     </svg>
-    <div class="meta" style="display:flex;justify-content:space-between">
-      <span>${fmtDate(weights[0].measured_at)}</span>
-      <span>טווח: ${min}–${max} ק"ג</span>
-      <span>${fmtDate(weights[n - 1].measured_at)}</span></div></div>`);
+    <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--ink-3);font-weight:600;margin-top:2px">
+      <span>${window.fmtDateShort(weights[0].measured_at)}</span><span>${min}–${max} ${T('kg')}</span><span>${window.fmtDateShort(weights[n - 1].measured_at)}</span></div></div>`);
 }
 
-function prescriptionForm(petId) {
-  const f = el(`<form>
-    <div class="field"><label>תרופה / מרשם *</label><input name="medication" required></div>
-    <div class="row">
-      <div class="field"><label>מינון</label><input name="dosage" placeholder='למשל: 1 כדור פעמיים ביום'></div>
-      <div class="field"><label>הוראות</label><input name="instructions" placeholder="עם אוכל / לפני שינה..."></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>תאריך התחלה</label><input type="date" name="start_date" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>תאריך סיום</label><input type="date" name="end_date"></div>
-    </div></form>`);
-  const submit = el('<button class="btn">שמירה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
-  const { close } = openModal('הוספת מרשם', f, wrapBtns(submit, cancel)); cancel.onclick = close;
-  submit.onclick = async () => { if (!f.medication.value) return toast('שם התרופה הוא שדה חובה', 'err'); try {
-    await api('/prescriptions', { method: 'POST', body: { pet_id: petId, medication: f.medication.value, dosage: f.dosage.value,
-      instructions: f.instructions.value, start_date: f.start_date.value, end_date: f.end_date.value } });
-    toast('נוסף מרשם', 'ok'); close(); openPetDetail(petId); } catch (e) { toast(e.message, 'err'); } };
-}
-
-function weightForm(petId) {
-  const f = el(`<form>
-    <div class="row">
-      <div class="field"><label>משקל (ק"ג) *</label><input type="number" step="0.01" name="weight_kg" required></div>
-      <div class="field"><label>תאריך</label><input type="date" name="measured_at" value="${new Date().toISOString().slice(0,10)}"></div>
-    </div>
-    <div class="field"><label>הערות</label><input name="notes"></div></form>`);
-  const submit = el('<button class="btn">שמירה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
-  const { close } = openModal('הוספת מדידת משקל', f, wrapBtns(submit, cancel)); cancel.onclick = close;
-  submit.onclick = async () => { if (!f.weight_kg.value) return toast('נא להזין משקל', 'err'); try {
-    await api('/weights', { method: 'POST', body: { pet_id: petId, weight_kg: f.weight_kg.value, measured_at: f.measured_at.value, notes: f.notes.value } });
-    toast('המשקל נשמר', 'ok'); close(); openPetDetail(petId); } catch (e) { toast(e.message, 'err'); } };
-}
-
-function vaccinationForm(petId) {
-  const f = el(`<form>
-    <div class="field"><label>שם החיסון *</label><input name="vaccine_name" required></div>
-    <div class="row">
-      <div class="field"><label>תאריך מתן</label><input type="date" name="date_given" value="${new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>מועד הבא</label><input type="date" name="next_due"></div>
-    </div>
-    <div class="field"><label>הערות</label><textarea name="notes"></textarea></div></form>`);
-  const submit = el('<button class="btn">שמירה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
-  const { close } = openModal('הוספת חיסון', f, wrapBtns(submit, cancel)); cancel.onclick = close;
-  submit.onclick = async () => { try {
-    await api('/medical/vaccinations', { method: 'POST', body: { pet_id: petId, vaccine_name: f.vaccine_name.value,
-      date_given: f.date_given.value, next_due: f.next_due.value, notes: f.notes.value } });
-    toast('נוסף חיסון', 'ok'); close(); openPetDetail(petId); } catch (e) { toast(e.message, 'err'); } };
-}
-
-function recordForm(petId) {
-  const f = el(`<form>
-    <div class="field"><label>תאריך ביקור</label><input type="date" name="visit_date" value="${new Date().toISOString().slice(0,10)}"></div>
-    <div class="field"><label>אבחנה</label><input name="diagnosis"></div>
-    <div class="field"><label>טיפול</label><input name="treatment"></div>
-    <div class="field"><label>הערות</label><textarea name="notes"></textarea></div></form>`);
-  const submit = el('<button class="btn">שמירה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
-  const { close } = openModal('הוספת רשומה רפואית', f, wrapBtns(submit, cancel)); cancel.onclick = close;
-  submit.onclick = async () => { try {
-    await api('/medical/records', { method: 'POST', body: { pet_id: petId, visit_date: f.visit_date.value,
-      diagnosis: f.diagnosis.value, treatment: f.treatment.value, notes: f.notes.value } });
-    toast('נוספה רשומה', 'ok'); close(); openPetDetail(petId); } catch (e) { toast(e.message, 'err'); } };
-}
-
-/* ============================ Appointments ============================ */
+/* ===================== appointments ===================== */
 let apptFilter = '';
-async function viewAppointments() {
-  loadingView();
+async function apptsList() {
   const isVet = State.user.role === 'vet';
   const { appointments } = await api('/appointments' + (isVet && apptFilter ? '?status=' + apptFilter : ''));
-  const node = el(`<div>
-    <div class="page-head"><h2>${isVet ? 'פגישות' : 'הפגישות שלי'}</h2>
-      <button class="btn" id="add">＋ ${isVet ? 'פגישה חדשה' : 'בקשת תור'}</button></div>
-    ${isVet ? '<div class="toolbar" id="filters"></div>' : ''}
-    <div id="list"></div></div>`);
+  const body = el('<div></div>');
   if (isVet) {
-    const filters = node.querySelector('#filters');
-    [['', 'הכל'], ['requested', 'ממתין לאישור'], ['confirmed', 'מאושר'], ['completed', 'הושלם'], ['cancelled', 'בוטל']]
-      .forEach(([v, l]) => { const c = el(`<button class="chip ${apptFilter === v ? 'active' : ''}">${l}</button>`);
-        c.onclick = () => { apptFilter = v; viewAppointments(); }; filters.appendChild(c); });
+    const chips = el('<div class="chips"></div>');
+    [['', T('all')], ['requested', TT(APPT_STATUS.requested)], ['confirmed', TT(APPT_STATUS.confirmed)], ['completed', TT(APPT_STATUS.completed)], ['cancelled', TT(APPT_STATUS.cancelled)]]
+      .forEach(([v, l]) => { const c = el(`<button class="chip${apptFilter === v ? ' active' : ''}">${esc(l)}</button>`); c.onclick = () => { apptFilter = v; render(); }; chips.appendChild(c); });
+    body.appendChild(chips);
   }
-  const list = node.querySelector('#list');
-  if (!appointments.length) list.appendChild(el(`<div class="empty"><span class="ico">📅</span>אין פגישות להצגה.</div>`));
-  appointments.forEach((a) => list.appendChild(apptListItem(a, true)));
-  node.querySelector('#add').onclick = () => apptForm();
-  setView(node);
-}
-
-function apptListItem(a, clickable) {
-  const item = el(`<div class="list-item${clickable ? ' click' : ''}">
-    <div class="avatar">📅</div>
-    <div class="grow">
-      <div class="title">${APPT_TYPES[a.type] || a.type}${a.pet_name ? ' · ' + esc(a.pet_name) : ''}</div>
-      <div class="meta">${fmtDateTime(a.scheduled_at)}${a.client_name && State.user.role === 'vet' ? ' · ' + esc(a.client_name) : ''}${a.reason ? ' · ' + esc(a.reason) : ''}</div>
-    </div>
-    <span class="badge ${a.status}">${APPT_STATUS[a.status]}</span>
-  </div>`);
-  if (clickable) { item.style.cursor = 'pointer'; item.onclick = () => apptDetail(a); }
-  return item;
-}
-
-async function petOptions(selectedId) {
-  const { pets } = await api('/pets');
-  return pets.map((p) => `<option value="${p.id}" ${p.id === selectedId ? 'selected' : ''}>${esc(p.name)} (${esc(p.species)})${p.owner_name ? ' · ' + esc(p.owner_name) : ''}</option>`).join('');
+  const sect = el('<div class="section"><div class="stack" id="list"></div></div>'); body.appendChild(sect);
+  const list = sect.querySelector('#list');
+  if (!appointments.length) list.innerHTML = `<div class="empty"><div class="empty-ic">${ic('calendar')}</div><div class="empty-t">${esc(T('noAppts'))}</div><div class="empty-s">${esc(T('noApptsSub'))}</div></div>`;
+  appointments.forEach((a) => list.insertAdjacentHTML('beforeend', apptRow(a, isVet)));
+  wireApptRows(body);
+  const node = scrNode({ title: isVet ? T('appts') : T('myAppts') }, body, { hasTabs: true, hasFab: true });
+  return { node, fab: fabBtn(isVet ? T('newAppt') : T('bookAppt'), 'plus', () => apptForm()) };
 }
 
 async function apptForm() {
   const opts = await petOptions();
-  const typeOpts = Object.entries(APPT_TYPES).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
-  const f = el(`<form>
-    <div class="field"><label>חיה</label><select name="pet_id"><option value="">— ללא —</option>${opts}</select></div>
-    <div class="field"><label>סוג הפגישה</label><select name="type">${typeOpts}</select></div>
-    <div class="field"><label>תאריך ושעה מבוקשים *</label><input type="datetime-local" name="scheduled_at" required></div>
-    <div class="field"><label>סיבת הפנייה</label><textarea name="reason" placeholder="תיאור קצר של הסיבה לתור"></textarea></div>
-  </form>`);
-  const submit = el('<button class="btn">שליחת בקשה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
-  const { close } = openModal('בקשת תור', f, wrapBtns(submit, cancel)); cancel.onclick = close;
-  submit.onclick = async () => {
-    if (!f.scheduled_at.value) return toast('נא לבחור תאריך ושעה', 'err');
-    try { await api('/appointments', { method: 'POST', body: { pet_id: f.pet_id.value || null, type: f.type.value,
-      scheduled_at: f.scheduled_at.value.replace('T', ' '), reason: f.reason.value } });
-      toast(State.user.role === 'vet' ? 'הפגישה נקבעה' : 'הבקשה נשלחה! נחזור אליך לאישור', 'ok'); close(); viewAppointments(); }
-    catch (e) { toast(e.message, 'err'); } };
+  mountSheet(sheet({
+    title: State.user.role === 'vet' ? T('newAppt') : T('requestAppt'),
+    body: `<form id="af">
+      ${fieldHtml(T('apptType'), `<select name="type">${optionList(APPT_TYPES, 'checkup')}</select>`)}
+      ${fieldHtml(T('whichPet'), `<select name="pet_id"><option value="">—</option>${opts}</select>`)}
+      ${fieldHtml(T('dateTime'), '<input type="datetime-local" name="scheduled_at" required>')}
+      ${fieldHtml(T('reason'), `<textarea name="reason" placeholder="${esc(T('reasonPh'))}"></textarea>`)}
+    </form>`,
+    foot: btnEl(T('sendRequest'), 'btn block', async (b) => {
+      const f = document.getElementById('af'); if (!f.scheduled_at.value) return toast(T('required'), 'err');
+      b.disabled = true;
+      try { await api('/appointments', { method: 'POST', body: { pet_id: f.pet_id.value || null, type: f.type.value, scheduled_at: f.scheduled_at.value.replace('T', ' '), reason: f.reason.value } });
+        toast(State.user.role === 'vet' ? T('saved') : T('requestSent'), 'ok'); closeSheet(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; }
+    }),
+  }));
 }
 
-async function apptDetail(a) {
+function apptManage(a) {
   const isVet = State.user.role === 'vet';
-  const body = el(`<div>
-    <div class="detail-row"><div class="k">סטטוס</div><div class="v"><span class="badge ${a.status}">${APPT_STATUS[a.status]}</span></div></div>
-    <div class="detail-row"><div class="k">סוג</div><div class="v">${APPT_TYPES[a.type] || a.type}</div></div>
-    <div class="detail-row"><div class="k">מועד</div><div class="v">${fmtDateTime(a.scheduled_at)}</div></div>
-    ${a.pet_name ? `<div class="detail-row"><div class="k">חיה</div><div class="v">${esc(a.pet_name)}</div></div>` : ''}
-    ${isVet ? `<div class="detail-row"><div class="k">לקוח</div><div class="v">${esc(a.client_name)} · ${esc(a.client_phone || '')}</div></div>` : ''}
-    <div class="detail-row"><div class="k">סיבה</div><div class="v">${esc(a.reason) || '—'}</div></div>
-    ${a.vet_notes ? `<div class="detail-row"><div class="k">הערות הווטרינר</div><div class="v">${esc(a.vet_notes)}</div></div>` : ''}
-    <div id="vetctl"></div>
-  </div>`);
-
-  const actions = [];
-  if (isVet) {
-    const ctl = body.querySelector('#vetctl');
-    // Reminder log for this appointment (read-only)
-    try {
-      const { notifications } = await api(`/notifications?appointment_id=${a.id}`);
-      if (notifications && notifications.length) {
-        ctl.appendChild(el('<div class="section-title">🔔 תזכורות</div>'));
-        notifications.forEach((nt) => ctl.appendChild(el(
-          `<div class="list-item"><div class="grow"><div class="title">${NOTIF_TEMPLATE[nt.template] || nt.template}</div>
-            <div class="meta">${nt.channel === 'email' ? 'אימייל' : esc(nt.channel)} · מתוזמן ל-${fmtDateTime(nt.send_at)}${nt.sent_at ? ' · נשלח ' + fmtDateTime(nt.sent_at) : ''}${nt.error ? ' · ' + esc(nt.error) : ''}</div></div>
-            <span class="badge ${nt.status === 'sent' ? 'completed' : nt.status === 'failed' ? 'cancelled' : nt.status === 'cancelled' ? 'normal' : 'confirmed'}">${NOTIF_STATUS[nt.status] || nt.status}</span></div>`)));
-      }
-    } catch {}
-    ctl.appendChild(el('<div class="section-title">ניהול פגישה</div>'));
-    const statusSel = el(`<div class="field"><label>שינוי סטטוס</label><select>
-      ${Object.entries(APPT_STATUS).map(([v, l]) => `<option value="${v}" ${v === a.status ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`);
-    const reSched = el(`<div class="field"><label>קביעה מחדש</label><input type="datetime-local" value="${a.scheduled_at ? a.scheduled_at.replace(' ', 'T') : ''}"></div>`);
-    const notes = el(`<div class="field"><label>הערות</label><textarea>${esc(a.vet_notes || '')}</textarea></div>`);
-    ctl.append(statusSel, reSched, notes);
-    const save = el('<button class="btn">שמירת שינויים</button>');
-    save.onclick = async () => { try {
-      await api(`/appointments/${a.id}`, { method: 'PATCH', body: { status: statusSel.querySelector('select').value,
-        scheduled_at: reSched.querySelector('input').value.replace('T', ' '), vet_notes: notes.querySelector('textarea').value } });
-      toast('עודכן', 'ok'); close(); viewAppointments(); } catch (e) { toast(e.message, 'err'); } };
-    actions.push(save);
-  } else if (a.status === 'requested' || a.status === 'confirmed') {
-    const cancelAppt = el('<button class="btn danger">ביטול פגישה</button>');
-    cancelAppt.onclick = async () => { if (!confirm('לבטל את הפגישה?')) return;
-      await api(`/appointments/${a.id}`, { method: 'PATCH', body: { status: 'cancelled' } });
-      toast('הפגישה בוטלה', 'ok'); close(); viewAppointments(); };
-    actions.push(cancelAppt);
-  }
-  const closeBtn = el('<button class="btn ghost">סגירה</button>');
-  actions.push(closeBtn);
-  const { close } = openModal('פרטי פגישה', body, wrapBtns(...actions));
-  closeBtn.onclick = close;
+  const tp = APPT_TYPES[a.type] || APPT_TYPES.other;
+  const info = `<div class="stack sm">
+    <div class="drow"><div class="dk">${ic('activity')}${esc(T('status'))}</div><div class="dv">${badge(a.status, APPT_STATUS, a.status)}</div></div>
+    <div class="drow"><div class="dk">${ic(tp.icon)}${esc(T('apptType'))}</div><div class="dv">${esc(TT(tp))}</div></div>
+    <div class="drow"><div class="dk">${ic('clock')}${esc(T('dateTime'))}</div><div class="dv">${esc(window.fmtDateTime(a.scheduled_at))}</div></div>
+    ${a.pet_name ? `<div class="drow"><div class="dk">${ic('paw-print')}${esc(T('whichPet'))}</div><div class="dv">${esc(a.pet_name)}</div></div>` : ''}
+    ${isVet && a.client_name ? `<div class="drow"><div class="dk">${ic('user')}${esc(T('owner'))}</div><div class="dv">${esc(a.client_name)} · ${esc(a.client_phone || '')}</div></div>` : ''}
+    ${a.reason ? `<div class="drow"><div class="dk">${ic('file-text')}${esc(T('reason'))}</div><div class="dv">${esc(a.reason)}</div></div>` : ''}
+  </div>`;
+  let bodyHtml = info;
+  if (isVet) bodyHtml += `<div class="section-head"><h2>${esc(T('manageAppt'))}</h2></div>
+    ${fieldHtml(T('changeStatus'), `<select id="m-status">${optionList(APPT_STATUS, a.status)}</select>`)}
+    ${fieldHtml(T('reschedule'), `<input type="datetime-local" id="m-when" value="${a.scheduled_at ? a.scheduled_at.replace(' ', 'T').slice(0, 16) : ''}">`)}
+    ${fieldHtml(T('vetNotes'), `<textarea id="m-notes">${esc(a.vet_notes || '')}</textarea>`)}
+    <div id="m-rem"></div>`;
+  const foot = isVet
+    ? btnEl(T('saveChanges'), 'btn block', async (b) => { b.disabled = true; try { await api(`/appointments/${a.id}`, { method: 'PATCH', body: { status: document.getElementById('m-status').value, scheduled_at: document.getElementById('m-when').value.replace('T', ' '), vet_notes: document.getElementById('m-notes').value } }); toast(T('updated'), 'ok'); s.close(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } })
+    : (['requested', 'confirmed'].includes(a.status) ? btnEl(T('cancelAppt'), 'btn danger block', async () => { if (!confirm(T('cancelAppt') + '?')) return; await api(`/appointments/${a.id}`, { method: 'PATCH', body: { status: 'cancelled' } }); toast(T('updated'), 'ok'); s.close(); render(); }) : null);
+  const s = mountSheet(sheet({ title: T('apptDetails'), body: bodyHtml, foot }));
+  if (isVet) loadReminderLog(a.id);
+}
+async function loadReminderLog(apptId) {
+  try { const { notifications } = await api(`/notifications?appointment_id=${apptId}`); const host = document.getElementById('m-rem'); if (!host || !notifications.length) return;
+    host.insertAdjacentHTML('beforeend', `<div class="section-head" style="margin-top:8px"><h2>${esc(T('remindersLog'))}</h2></div>` + notifications.map((nt) => `<div class="row-item" style="margin-bottom:8px"><span class="stat-ic ${nt.status === 'sent' ? 'tile-ok' : nt.status === 'failed' ? 'tile-danger' : 'tile-info'}" style="margin:0">${ic('bell')}</span><div class="grow"><div class="ri-title">${esc(TT(NOTIF_TEMPLATE[nt.template]) || nt.template)}</div><div class="ri-meta">${esc(window.fmtDateTime(nt.send_at))} · ${esc(nt.status)}</div></div></div>`).join('')); drawIcons();
+  } catch {}
 }
 
-/* ============================ Inquiries (communication) ============================ */
+/* ===================== inquiries + chat ===================== */
 let inqFilter = '';
-async function viewInquiries() {
-  loadingView();
+async function inquiriesList() {
   const isVet = State.user.role === 'vet';
   const { inquiries } = await api('/inquiries' + (isVet && inqFilter ? '?status=' + inqFilter : ''));
-  const node = el(`<div>
-    <div class="page-head"><h2>${isVet ? 'פניות לקוחות' : 'הפניות שלי'}</h2>
-      ${isVet ? '' : '<button class="btn" id="add">＋ פנייה חדשה</button>'}</div>
-    ${isVet ? '<div class="toolbar" id="filters"></div>' : ''}
-    <div id="list"></div></div>`);
+  const body = el('<div></div>');
   if (isVet) {
-    const filters = node.querySelector('#filters');
-    [['', 'הכל'], ['open', 'פתוח'], ['in_progress', 'בטיפול'], ['resolved', 'נסגר']]
-      .forEach(([v, l]) => { const c = el(`<button class="chip ${inqFilter === v ? 'active' : ''}">${l}</button>`);
-        c.onclick = () => { inqFilter = v; viewInquiries(); }; filters.appendChild(c); });
+    const chips = el('<div class="chips"></div>');
+    [['', T('all')], ['open', TT(INQ_STATUS.open)], ['in_progress', TT(INQ_STATUS.in_progress)], ['resolved', TT(INQ_STATUS.resolved)]]
+      .forEach(([v, l]) => { const c = el(`<button class="chip${inqFilter === v ? ' active' : ''}">${esc(l)}</button>`); c.onclick = () => { inqFilter = v; render(); }; chips.appendChild(c); });
+    body.appendChild(chips);
   }
-  const list = node.querySelector('#list');
-  if (!inquiries.length) list.appendChild(el(`<div class="empty"><span class="ico">💬</span>אין פניות להצגה.</div>`));
-  inquiries.forEach((i) => {
-    const item = el(`<div class="list-item click">
-      <div class="avatar">💬</div>
-      <div class="grow"><div class="title">${esc(i.subject)}</div>
-        <div class="meta">${isVet ? esc(i.client_name) + ' · ' : ''}${i.pet_name ? esc(i.pet_name) + ' · ' : ''}${i.message_count} הודעות · ${fmtDateTime(i.updated_at)}</div></div>
-      <span class="badge ${i.priority}">${PRIORITY[i.priority]}</span>
-      <span class="badge ${i.status}">${INQ_STATUS[i.status]}</span>
-    </div>`);
-    item.onclick = () => openInquiry(i.id);
-    list.appendChild(item);
-  });
-  if (!isVet) node.querySelector('#add').onclick = () => inquiryForm();
-  setView(node);
+  const sect = el('<div class="section"><div class="stack" id="list"></div></div>'); body.appendChild(sect);
+  const list = sect.querySelector('#list');
+  if (!inquiries.length) list.innerHTML = `<div class="empty"><div class="empty-ic">${ic('message-circle')}</div><div class="empty-t">${esc(T('noInq'))}</div><div class="empty-s">${esc(T('noInqSub'))}</div></div>`;
+  inquiries.forEach((i) => list.insertAdjacentHTML('beforeend', inqRow(i, isVet)));
+  wireInqRows(body);
+  const node = scrNode({ title: isVet ? T('inquiries') : T('messages') }, body, { hasTabs: true, hasFab: !isVet });
+  return { node, fab: isVet ? null : fabBtn(T('newInquiry'), 'plus', () => inquiryForm()) };
 }
 
 async function inquiryForm() {
   const opts = await petOptions();
-  const f = el(`<form>
-    <div class="field"><label>נושא *</label><input name="subject" required></div>
-    <div class="row">
-      <div class="field"><label>חיה רלוונטית</label><select name="pet_id"><option value="">— ללא —</option>${opts}</select></div>
-      <div class="field"><label>דחיפות</label><select name="priority">
-        <option value="normal">רגילה</option><option value="low">נמוכה</option><option value="high">גבוהה</option><option value="urgent">דחוף</option></select></div>
-    </div>
-    <div class="field"><label>תוכן ההודעה *</label><textarea name="body" required placeholder="תאר/י את השאלה או הבעיה..."></textarea></div>
-  </form>`);
-  const submit = el('<button class="btn">שליחה</button>'); const cancel = el('<button class="btn ghost">ביטול</button>');
-  const { close } = openModal('פנייה חדשה לווטרינר', f, wrapBtns(submit, cancel)); cancel.onclick = close;
-  submit.onclick = async () => {
-    if (!f.subject.value || !f.body.value) return toast('נושא ותוכן הם שדות חובה', 'err');
-    try { const { inquiry } = await api('/inquiries', { method: 'POST', body: { subject: f.subject.value,
-      body: f.body.value, pet_id: f.pet_id.value || null, priority: f.priority.value } });
-      toast('הפנייה נשלחה', 'ok'); close(); openInquiry(inquiry.id); } catch (e) { toast(e.message, 'err'); } };
+  const s = mountSheet(sheet({
+    title: T('newInquiryFull'),
+    body: `<form id="if">
+      ${fieldHtml(T('subject'), '<input name="subject" required>')}
+      ${fieldHtml(T('relatedPet'), `<select name="pet_id"><option value="">—</option>${opts}</select>`)}
+      ${fieldHtml(T('priority'), `<select name="priority">${optionList(PRIORITY, 'normal')}</select>`)}
+      ${fieldHtml(T('messageBody'), `<textarea name="body" required placeholder="${esc(T('messagePh'))}"></textarea>`)}
+    </form>`,
+    foot: btnEl(T('send'), 'btn block', async (b) => { const f = document.getElementById('if'); if (!f.subject.value || !f.body.value) return toast(T('required'), 'err'); b.disabled = true;
+      try { const { inquiry } = await api('/inquiries', { method: 'POST', body: { subject: f.subject.value, body: f.body.value, pet_id: f.pet_id.value || null, priority: f.priority.value } }); s.close(); Nav.push('chat', { id: inquiry.id }); } catch (e) { toast(e.message, 'err'); b.disabled = false; } }),
+  }));
 }
 
-async function openInquiry(id) {
+async function chatScreen({ id }) {
+  const isVet = State.user.role === 'vet';
   const { inquiry, messages } = await api(`/inquiries/${id}`);
-  const isVet = State.user.role === 'vet';
-  const body = el(`<div>
-    <div class="mb" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <span class="badge ${inquiry.status}">${INQ_STATUS[inquiry.status]}</span>
-      <span class="badge ${inquiry.priority}">דחיפות: ${PRIORITY[inquiry.priority]}</span>
-      ${inquiry.pet_name ? `<span class="muted">🐾 ${esc(inquiry.pet_name)}</span>` : ''}
-      ${isVet ? `<span class="muted">· ${esc(inquiry.client_name)}</span>` : ''}
-    </div>
-    <div class="thread" id="thread"></div>
-    <div class="reply-box"><textarea id="reply" placeholder="כתוב/כתבי תשובה..."></textarea><button class="btn" id="send">שליחה</button></div>
-    ${isVet ? '<div id="vetctl"></div>' : ''}
-  </div>`);
+  const trailing = isVet ? `<button class="iconbtn" data-act="manageinq">${ic('sliders-horizontal')}</button>` : '';
+  const body = el(`<div class="section"><div class="mb12" style="display:flex;gap:6px;flex-wrap:wrap">${badge(inquiry.status, INQ_STATUS, inquiry.status)}<span class="badge b-${inquiry.priority}">${esc(TT(PRIORITY[inquiry.priority]))}</span>${inquiry.pet_name ? `<span class="pill-tag">${ic('paw-print')}${esc(inquiry.pet_name)}</span>` : ''}</div><div class="thread" id="thread"></div></div>`);
   const thread = body.querySelector('#thread');
-  const renderMsgs = (msgs) => { thread.innerHTML = ''; msgs.forEach((m) => {
-    const mine = m.sender_id === State.user.id;
-    thread.appendChild(el(`<div class="msg ${mine ? 'mine' : 'theirs'}">
-      <div class="who">${esc(m.sender_name)}${m.sender_role === 'vet' ? ' (וטרינר)' : ''}</div>
-      <div>${esc(m.body).replace(/\n/g, '<br>')}</div>
-      <div class="when">${fmtDateTime(m.created_at)}</div></div>`));
-    });
-    thread.scrollTop = thread.scrollHeight; };
+  const renderMsgs = (msgs) => { thread.innerHTML = ''; msgs.forEach((m) => { const mine = m.sender_id === State.user.id;
+    thread.insertAdjacentHTML('beforeend', `<div class="msg ${mine ? 'mine' : 'theirs'}"><div class="who">${esc(m.sender_name)}${m.sender_role === 'vet' ? ' · ' + T('vetTitle') : ''}</div><div>${esc(m.body).replace(/\n/g, '<br>')}</div><div class="when">${esc(window.fmtDateTime(m.created_at))}</div></div>`); });
+    setTimeout(() => thread.scrollIntoView(false), 20); };
   renderMsgs(messages);
-
-  body.querySelector('#send').onclick = async () => {
-    const ta = body.querySelector('#reply'); const text = ta.value.trim();
-    if (!text) return; try {
-      await api(`/inquiries/${id}/messages`, { method: 'POST', body: { body: text } });
-      ta.value = ''; const { messages: m } = await api(`/inquiries/${id}`); renderMsgs(m);
-      setTimeout(() => thread.scrollTop = thread.scrollHeight, 50); } catch (e) { toast(e.message, 'err'); } };
-
-  if (isVet) {
-    const ctl = body.querySelector('#vetctl');
-    ctl.appendChild(el('<div class="section-title">ניהול פנייה</div>'));
-    const sel = el(`<div class="row"><div class="field"><label>סטטוס</label><select id="st">
-      ${Object.entries(INQ_STATUS).map(([v, l]) => `<option value="${v}" ${v === inquiry.status ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-      <div class="field"><label>דחיפות</label><select id="pr">
-      ${Object.entries(PRIORITY).map(([v, l]) => `<option value="${v}" ${v === inquiry.priority ? 'selected' : ''}>${l}</option>`).join('')}</select></div></div>`);
-    ctl.appendChild(sel);
-    const save = el('<button class="btn ghost sm">עדכון סטטוס</button>');
-    save.onclick = async () => { try {
-      await api(`/inquiries/${id}`, { method: 'PATCH', body: { status: sel.querySelector('#st').value, priority: sel.querySelector('#pr').value } });
-      toast('עודכן', 'ok'); } catch (e) { toast(e.message, 'err'); } };
-    ctl.appendChild(save);
-  }
-
-  // Live updates: refresh the thread when a new message lands in this inquiry.
-  const channel = sb.channel('inq-' + id)
-    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `inquiry_id=eq.${id}` },
-      async () => { try { const { messages: m } = await api(`/inquiries/${id}`); renderMsgs(m); setTimeout(() => thread.scrollTop = thread.scrollHeight, 30); } catch {} })
-    .subscribe();
-
-  openModal(inquiry.subject, body, null, () => sb.removeChannel(channel));
-  body.querySelector('#reply').addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) body.querySelector('#send').click(); });
+  // composer (fixed bottom)
+  const node = scrNode({ title: inquiry.subject, leading: backBtn(), trailing }, body);
+  const composer = el(`<div class="composer"><input id="reply" placeholder="${esc(T('replyPh'))}"><button class="send" id="send">${ic('send')}</button></div>`);
+  node.appendChild(composer);
+  const send = async () => { const inp = node.querySelector('#reply'); const text = inp.value.trim(); if (!text) return;
+    try { await api(`/inquiries/${id}/messages`, { method: 'POST', body: { body: text } }); inp.value = ''; const { messages: m } = await api(`/inquiries/${id}`); renderMsgs(m); } catch (e) { toast(e.message, 'err'); } };
+  node.querySelector('#send').onclick = send;
+  node.querySelector('#reply').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+  if (isVet) node.querySelector('[data-act="manageinq"]').onclick = () => inquiryManage(inquiry);
+  // realtime
+  const channel = sb.channel('inq-' + id).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `inquiry_id=eq.${id}` },
+    async () => { try { const { messages: m } = await api(`/inquiries/${id}`); renderMsgs(m); } catch {} }).subscribe();
+  // clean up channel when leaving (next render removes node); store for safety
+  if (window.__chatChannel) { try { sb.removeChannel(window.__chatChannel); } catch {} }
+  window.__chatChannel = channel;
+  drawIcons();
+  return { node };
+}
+function inquiryManage(inq) {
+  mountSheet(sheet({ title: T('manageInq'),
+    body: `${fieldHtml(T('status'), `<select id="iq-status">${optionList(INQ_STATUS, inq.status)}</select>`)}${fieldHtml(T('priority'), `<select id="iq-pri">${optionList(PRIORITY, inq.priority)}</select>`)}`,
+    foot: btnEl(T('saveChanges'), 'btn block', async () => { await api(`/inquiries/${inq.id}`, { method: 'PATCH', body: { status: document.getElementById('iq-status').value, priority: document.getElementById('iq-pri').value } }); toast(T('updated'), 'ok'); closeSheet(); render(); }) }));
 }
 
-/* ============================ Clients (vet only) ============================ */
-async function viewClients() {
-  loadingView();
-  const { clients } = await api('/admin/clients');
-  const node = el(`<div><div class="page-head"><h2>לקוחות</h2></div><div id="list"></div></div>`);
-  const list = node.querySelector('#list');
-  if (!clients.length) list.appendChild(el(`<div class="empty"><span class="ico">👥</span>אין לקוחות רשומים.</div>`));
-  clients.forEach((c) => list.appendChild(el(
-    `<div class="list-item"><div class="avatar">👤</div>
-      <div class="grow"><div class="title">${esc(c.name)}</div>
-        <div class="meta">${esc(c.email)}${c.phone ? ' · ' + esc(c.phone) : ''} · ${c.pet_count} חיות</div></div>
-      <span class="muted">מאז ${fmtDate(c.created_at)}</span></div>`)));
-  setView(node);
-}
-
-/* ============================ Tasks (vet only) ============================ */
+/* ===================== tasks (vet) ===================== */
 let taskFilter = 'open';
-async function viewTasks() {
-  loadingView();
+async function tasksScreen() {
   const { tasks } = await api('/tasks' + (taskFilter ? '?status=' + taskFilter : ''));
-  const node = el(`<div>
-    <div class="page-head"><h2>משימות</h2><button class="btn" id="add">＋ משימה חדשה</button></div>
-    <div class="toolbar" id="filters"></div>
-    <div id="list"></div></div>`);
-  const filters = node.querySelector('#filters');
-  [['open', 'פתוחות'], ['done', 'הושלמו'], ['', 'הכל']].forEach(([v, l]) => {
-    const c = el(`<button class="chip ${taskFilter === v ? 'active' : ''}">${l}</button>`);
-    c.onclick = () => { taskFilter = v; viewTasks(); }; filters.appendChild(c);
-  });
-  const list = node.querySelector('#list');
-  if (!tasks.length) list.appendChild(el(`<div class="empty"><span class="ico">✅</span>אין משימות להצגה.</div>`));
-  tasks.forEach((t) => {
-    const done = t.status === 'done';
-    const item = el(`<div class="list-item">
-      <div class="avatar">${done ? '✅' : '⬜'}</div>
-      <div class="grow"><div class="title" style="${done ? 'text-decoration:line-through;opacity:.6' : ''}">${esc(t.title)}</div>
-        <div class="meta">${t.due_date ? 'יעד: ' + fmtDate(t.due_date) : ''}${t.client_name ? ' · ' + esc(t.client_name) : ''}${t.pet_name ? ' · ' + esc(t.pet_name) : ''}${t.notes ? ' · ' + esc(t.notes) : ''}</div></div>
-      <span class="badge ${t.priority}">${PRIORITY[t.priority]}</span></div>`);
-    const toggle = el(`<button class="btn ${done ? 'ghost' : ''} sm">${done ? 'החזר' : 'סיום'}</button>`);
-    toggle.onclick = async (e) => { e.stopPropagation(); await api(`/tasks/${t.id}`, { method: 'PATCH', body: { status: done ? 'open' : 'done' } }); viewTasks(); refreshBadges(); };
-    item.appendChild(toggle);
-    item.style.cursor = 'pointer';
-    item.onclick = () => taskForm(t);
-    list.appendChild(item);
-  });
-  node.querySelector('#add').onclick = () => taskForm();
-  setView(node);
+  const body = el('<div></div>');
+  const chips = el('<div class="chips"></div>');
+  [['open', T('openTasks')], ['done', T('complete')], ['', T('all')]].forEach(([v, l]) => { const c = el(`<button class="chip${taskFilter === v ? ' active' : ''}">${esc(l)}</button>`); c.onclick = () => { taskFilter = v; render(); }; chips.appendChild(c); });
+  body.appendChild(chips);
+  const sect = el('<div class="section"><div class="stack sm" id="list"></div></div>'); body.appendChild(sect);
+  const list = sect.querySelector('#list');
+  if (!tasks.length) list.innerHTML = `<div class="empty"><div class="empty-ic">${ic('list-checks')}</div><div class="empty-t">${esc(T('noTasks'))}</div><div class="empty-s">${esc(T('noTasksSub'))}</div></div>`;
+  tasks.forEach((tk) => { const done = tk.status === 'done';
+    const row = el(`<div class="row-item"><button class="stat-ic ${done ? 'tile-ok' : 'tile-blue'}" data-toggle style="margin:0;border:none">${ic(done ? 'check-circle-2' : 'circle')}</button>
+      <div class="grow" data-edit><div class="ri-title" style="${done ? 'text-decoration:line-through;opacity:.6' : ''}">${esc(tk.title)}</div><div class="ri-meta truncate">${tk.due_date ? esc(T('dueDate')) + ': ' + esc(window.fmtDate(tk.due_date)) : ''}${tk.client_name ? ' · ' + esc(tk.client_name) : ''}</div></div>
+      <span class="badge b-${tk.priority}">${esc(TT(PRIORITY[tk.priority]))}</span></div>`);
+    row.querySelector('[data-toggle]').onclick = async (e) => { e.stopPropagation(); await api(`/tasks/${tk.id}`, { method: 'PATCH', body: { status: done ? 'open' : 'done' } }); render(); };
+    row.querySelector('[data-edit]').onclick = () => taskForm(tk);
+    list.appendChild(row); });
+  const node = scrNode({ title: T('tasks') }, body, { hasTabs: true, hasFab: true });
+  return { node, fab: fabBtn(T('newTask'), 'plus', () => taskForm()) };
 }
-
 async function taskForm(task) {
-  const [pets, { clients }] = await Promise.all([
-    api('/pets').then((r) => r.pets), api('/admin/clients')]);
-  const petOpts = pets.map((p) => `<option value="${p.id}" ${task && p.id === task.pet_id ? 'selected' : ''}>${esc(p.name)}${p.owner_name ? ' · ' + esc(p.owner_name) : ''}</option>`).join('');
+  const [opts, { clients }] = await Promise.all([petOptions(task && task.pet_id), api('/admin/clients')]);
   const clientOpts = clients.map((c) => `<option value="${c.id}" ${task && c.id === task.client_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
-  const f = el(`<form>
-    <div class="field"><label>כותרת המשימה *</label><input name="title" required value="${esc(task?.title || '')}"></div>
-    <div class="row">
-      <div class="field"><label>תאריך יעד</label><input type="date" name="due_date" value="${esc(task?.due_date || '')}"></div>
-      <div class="field"><label>דחיפות</label><select name="priority">
-        ${Object.entries(PRIORITY).map(([v, l]) => `<option value="${v}" ${(task?.priority || 'normal') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-    </div>
-    <div class="row">
-      <div class="field"><label>לקוח קשור</label><select name="client_id"><option value="">— ללא —</option>${clientOpts}</select></div>
-      <div class="field"><label>חיה קשורה</label><select name="pet_id"><option value="">— ללא —</option>${petOpts}</select></div>
-    </div>
-    <div class="field"><label>הערות</label><textarea name="notes">${esc(task?.notes || '')}</textarea></div>
-  </form>`);
-  const submit = el(`<button class="btn">${task ? 'שמירה' : 'הוספה'}</button>`);
-  const cancel = el('<button class="btn ghost">ביטול</button>');
-  const btns = [submit, cancel];
-  if (task) { const del = el('<button class="btn danger">מחיקה</button>');
-    del.onclick = async () => { if (!confirm('למחוק את המשימה?')) return; await api(`/tasks/${task.id}`, { method: 'DELETE' }); toast('נמחק', 'ok'); close(); viewTasks(); refreshBadges(); };
-    btns.push(del); }
-  const { close } = openModal(task ? 'עריכת משימה' : 'משימה חדשה', f, wrapBtns(...btns));
-  cancel.onclick = close;
-  submit.onclick = async () => {
-    if (!f.title.value) return toast('כותרת היא שדה חובה', 'err');
-    const body = { title: f.title.value, due_date: f.due_date.value, priority: f.priority.value,
-      client_id: f.client_id.value || null, pet_id: f.pet_id.value || null, notes: f.notes.value };
-    try { await api(task ? `/tasks/${task.id}` : '/tasks', { method: task ? 'PATCH' : 'POST', body });
-      toast('נשמר', 'ok'); close(); viewTasks(); refreshBadges(); } catch (e) { toast(e.message, 'err'); }
-  };
+  const footBtns = [btnEl(task ? T('save') : T('add'), 'btn block', async (b) => { const f = document.getElementById('tf'); if (!f.title.value) return toast(T('required'), 'err'); b.disabled = true;
+    const payload = { title: f.title.value, due_date: f.due_date.value, priority: f.priority.value, client_id: f.client_id.value || null, pet_id: f.pet_id.value || null, notes: f.notes.value };
+    try { await api(task ? `/tasks/${task.id}` : '/tasks', { method: task ? 'PATCH' : 'POST', body: payload }); toast(T('saved'), 'ok'); closeSheet(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } })];
+  if (task) footBtns.unshift(btnEl(T('del'), 'btn danger', async () => { if (!confirm(T('confirmDelete'))) return; await api(`/tasks/${task.id}`, { method: 'DELETE' }); toast(T('deleted'), 'ok'); closeSheet(); render(); }));
+  mountSheet(sheet({ title: task ? T('edit') : T('newTask'),
+    body: `<form id="tf">
+      ${fieldHtml(T('taskTitle'), `<input name="title" required value="${esc(task?.title || '')}">`)}
+      <div class="field-row">${fieldHtml(T('dueDate'), `<input type="date" name="due_date" value="${esc(task?.due_date || '')}">`)}${fieldHtml(T('priority'), `<select name="priority">${optionList(PRIORITY, task?.priority || 'normal')}</select>`)}</div>
+      ${fieldHtml(T('relatedClient'), `<select name="client_id"><option value="">—</option>${clientOpts}</select>`)}
+      ${fieldHtml(T('relatedPet'), `<select name="pet_id"><option value="">—</option>${opts}</select>`)}
+      ${fieldHtml(T('notes'), `<textarea name="notes">${esc(task?.notes || '')}</textarea>`)}
+    </form>`, foot: footBtns }));
 }
 
-/* ============================ Clinic info / settings ============================ */
-async function viewClinic() {
-  loadingView();
-  const { clinic } = await api('/clinic');
+/* ===================== clients (vet) ===================== */
+async function clientsScreen() {
+  const { clients } = await api('/admin/clients');
+  const body = el('<div class="section"><div class="stack sm" id="list"></div></div>');
+  const list = body.querySelector('#list');
+  if (!clients.length) list.innerHTML = `<div class="empty"><div class="empty-ic">${ic('users')}</div><div class="empty-t">${esc(T('noClients'))}</div></div>`;
+  clients.forEach((c) => list.insertAdjacentHTML('beforeend', `<div class="row-item">${personAvatar(false)}<div class="grow"><div class="ri-title">${esc(c.name)}</div><div class="ri-meta truncate">${esc(c.email)}${c.phone ? ' · ' + esc(c.phone) : ''} · ${c.pet_count} ${esc(T('petsCount'))}</div></div></div>`));
+  return { node: scrNode({ title: T('clients') }, body, { hasTabs: true }) };
+}
+
+/* ===================== clinic ===================== */
+async function clinicScreen() {
   const isVet = State.user.role === 'vet';
+  const { clinic } = await api('/clinic');
+  let body;
   if (isVet) {
-    const f = el(`<div class="card" style="max-width:600px">
-      <div class="field"><label>שם המרפאה</label><input id="clinic_name" value="${esc(clinic.clinic_name || '')}"></div>
-      <div class="row">
-        <div class="field"><label>טלפון</label><input id="phone" value="${esc(clinic.phone || '')}"></div>
-        <div class="field"><label>כתובת</label><input id="address" value="${esc(clinic.address || '')}"></div>
-      </div>
-      <div class="field"><label>שעות פעילות</label><textarea id="hours" placeholder="א'-ה' 09:00-19:00&#10;ו' 09:00-13:00">${esc(clinic.hours || '')}</textarea></div>
-      <div class="field"><label>מידע לשעת חירום</label><textarea id="emergency_info" placeholder="טלפון חירום, מרפאה תורנית...">${esc(clinic.emergency_info || '')}</textarea></div>
-      <button class="btn" id="save">שמירת פרטי המרפאה</button>
-    </div>`);
-    const node = el(`<div><div class="page-head"><h2>פרטי המרפאה</h2></div></div>`);
-    node.appendChild(f);
-    f.querySelector('#save').onclick = async () => { try {
-      await api('/clinic', { method: 'PUT', body: { clinic_name: f.querySelector('#clinic_name').value, phone: f.querySelector('#phone').value,
-        address: f.querySelector('#address').value, hours: f.querySelector('#hours').value, emergency_info: f.querySelector('#emergency_info').value } });
-      toast('פרטי המרפאה נשמרו', 'ok'); } catch (e) { toast(e.message, 'err'); } };
-    setView(node);
+    body = el(`<div class="section"><div class="card pad-lg">
+      ${fieldHtml(T('clinicName'), `<input id="cl-name" value="${esc(clinic.clinic_name || '')}">`)}
+      <div class="field-row">${fieldHtml(T('phone'), `<input id="cl-phone" value="${esc(clinic.phone || '')}">`)}${fieldHtml(T('address'), `<input id="cl-addr" value="${esc(clinic.address || '')}">`)}</div>
+      ${fieldHtml(T('hours'), `<textarea id="cl-hours">${esc(clinic.hours || '')}</textarea>`)}
+      ${fieldHtml(T('emergency'), `<textarea id="cl-emerg">${esc(clinic.emergency_info || '')}</textarea>`)}
+    </div></div>`);
+    const save = btnEl(T('saveClinic'), 'btn block', async (b) => { b.disabled = true; try { await api('/clinic', { method: 'PUT', body: { clinic_name: document.getElementById('cl-name').value, phone: document.getElementById('cl-phone').value, address: document.getElementById('cl-addr').value, hours: document.getElementById('cl-hours').value, emergency_info: document.getElementById('cl-emerg').value } }); toast(T('saved'), 'ok'); } catch (e) { toast(e.message, 'err'); } b.disabled = false; });
+    const wrap = el('<div class="section"></div>'); wrap.appendChild(save); body.appendChild(wrap);
   } else {
     const empty = !clinic.clinic_name && !clinic.phone && !clinic.address && !clinic.hours;
-    const node = el(`<div><div class="page-head"><h2>${esc(clinic.clinic_name || 'המרפאה')}</h2></div>
-      ${empty ? '<p class="muted">פרטי המרפאה טרם הוזנו.</p>' : `<div class="card" style="max-width:600px">
-        ${clinic.phone ? `<div class="detail-row"><div class="k">📞 טלפון</div><div class="v"><a href="tel:${esc(clinic.phone)}">${esc(clinic.phone)}</a></div></div>` : ''}
-        ${clinic.address ? `<div class="detail-row"><div class="k">📍 כתובת</div><div class="v">${esc(clinic.address)}</div></div>` : ''}
-        ${clinic.hours ? `<div class="detail-row"><div class="k">🕐 שעות</div><div class="v" style="white-space:pre-line">${esc(clinic.hours)}</div></div>` : ''}
-        ${clinic.emergency_info ? `<div class="detail-row"><div class="k">🚨 חירום</div><div class="v" style="white-space:pre-line">${esc(clinic.emergency_info)}</div></div>` : ''}
-      </div>`}</div>`);
-    setView(node);
+    body = el(`<div class="section">${empty ? `<div class="card flat muted" style="text-align:center">${esc(T('clinicEmpty'))}</div>` : `<div class="card pad-lg stack sm">
+      ${clinic.phone ? `<div class="drow"><div class="dk">${ic('phone')}${esc(T('phone'))}</div><div class="dv">${esc(clinic.phone)}</div></div>` : ''}
+      ${clinic.address ? `<div class="drow"><div class="dk">${ic('map-pin')}${esc(T('address'))}</div><div class="dv">${esc(clinic.address)}</div></div>` : ''}
+      ${clinic.hours ? `<div class="drow"><div class="dk">${ic('clock')}${esc(T('hours'))}</div><div class="dv" style="white-space:pre-line">${esc(clinic.hours)}</div></div>` : ''}
+      ${clinic.emergency_info ? `<div class="drow"><div class="dk">${ic('siren')}${esc(T('emergency'))}</div><div class="dv" style="white-space:pre-line">${esc(clinic.emergency_info)}</div></div>` : ''}
+    </div>${clinic.phone ? `<a class="btn block mt12" href="tel:${esc(clinic.phone)}">${ic('phone')}${esc(T('callClinic'))}</a>` : ''}`}</div>`);
   }
+  return { node: scrNode({ title: clinic.clinic_name || T('clinic') }, body, { hasTabs: true }) };
 }
 
-/* ============================ small utils ============================ */
-function wrapBtns(...btns) { const d = document.createElement('div'); d.style.display = 'flex'; d.style.gap = '10px'; btns.forEach((b) => d.appendChild(b)); return d; }
+/* ===================== pet / medical forms ===================== */
+function petForm(pet) {
+  const footBtns = [btnEl(pet ? T('save') : T('add'), 'btn block', async (b) => { const f = document.getElementById('pf'); if (!f.name.value || !f.species.value) return toast(T('required'), 'err'); b.disabled = true;
+    const payload = { name: f.name.value, species: f.species.value, breed: f.breed.value, sex: f.sex.value, birthdate: f.birthdate.value, weight_kg: f.weight_kg.value, notes: f.notes.value };
+    try { await api(pet ? `/pets/${pet.id}` : '/pets', { method: pet ? 'PUT' : 'POST', body: payload }); toast(T('saved'), 'ok'); closeSheet(); if (pet) Nav.back(); else render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } })];
+  if (pet) footBtns.unshift(btnEl(T('del'), 'btn danger', async () => { if (!confirm(T('confirmDelete'))) return; await api(`/pets/${pet.id}`, { method: 'DELETE' }); toast(T('deleted'), 'ok'); closeSheet(); Nav.go('pets'); }));
+  mountSheet(sheet({ title: pet ? T('edit') : T('addNewPet'),
+    body: `<form id="pf">
+      ${fieldHtml(T('petName'), `<input name="name" required value="${esc(pet?.name || '')}">`)}
+      <div class="field-row">${fieldHtml(T('species'), `<input name="species" required placeholder="${esc(TT({ he: 'כלב / חתול', en: 'Dog / Cat' }))}" value="${esc(pet?.species || '')}">`)}${fieldHtml(T('breed'), `<input name="breed" value="${esc(pet?.breed || '')}">`)}</div>
+      <div class="field-row">${fieldHtml(T('sex'), `<select name="sex">${optionList(SEX, pet?.sex || 'unknown')}</select>`)}${fieldHtml(T('weight') + ' (' + T('kg') + ')', `<input type="number" step="0.01" name="weight_kg" value="${esc(pet?.weight_kg || '')}">`)}</div>
+      ${fieldHtml(T('birthdate'), `<input type="date" name="birthdate" value="${esc(pet?.birthdate || '')}">`)}
+      ${fieldHtml(T('notes'), `<textarea name="notes">${esc(pet?.notes || '')}</textarea>`)}
+    </form>`, foot: footBtns }));
+}
+function rxForm(petId) {
+  mountSheet(sheet({ title: T('addRx'),
+    body: `<form id="rf">${fieldHtml(T('medication'), '<input name="medication" required>')}<div class="field-row">${fieldHtml(T('dosage'), '<input name="dosage">')}${fieldHtml(T('instructions'), '<input name="instructions">')}</div><div class="field-row">${fieldHtml(T('startDate'), `<input type="date" name="start_date" value="${new Date().toISOString().slice(0, 10)}">`)}${fieldHtml(T('endDate'), '<input type="date" name="end_date">')}</div></form>`,
+    foot: btnEl(T('save'), 'btn block', async (b) => { const f = document.getElementById('rf'); if (!f.medication.value) return toast(T('required'), 'err'); b.disabled = true; try { await api('/prescriptions', { method: 'POST', body: { pet_id: petId, medication: f.medication.value, dosage: f.dosage.value, instructions: f.instructions.value, start_date: f.start_date.value, end_date: f.end_date.value } }); toast(T('saved'), 'ok'); closeSheet(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } }) }));
+}
+function weightForm(petId) {
+  mountSheet(sheet({ title: T('addWeight'),
+    body: `<form id="wf"><div class="field-row">${fieldHtml(T('weight') + ' (' + T('kg') + ')', '<input type="number" step="0.01" name="weight_kg" required>')}${fieldHtml(T('dateGiven'), `<input type="date" name="measured_at" value="${new Date().toISOString().slice(0, 10)}">`)}</div>${fieldHtml(T('notes'), '<input name="notes">')}</form>`,
+    foot: btnEl(T('save'), 'btn block', async (b) => { const f = document.getElementById('wf'); if (!f.weight_kg.value) return toast(T('required'), 'err'); b.disabled = true; try { await api('/weights', { method: 'POST', body: { pet_id: petId, weight_kg: f.weight_kg.value, measured_at: f.measured_at.value, notes: f.notes.value } }); toast(T('saved'), 'ok'); closeSheet(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } }) }));
+}
+function vaccForm(petId) {
+  mountSheet(sheet({ title: T('addVacc'),
+    body: `<form id="vf">${fieldHtml(T('vaccineName'), '<input name="vaccine_name" required>')}<div class="field-row">${fieldHtml(T('dateGiven'), `<input type="date" name="date_given" value="${new Date().toISOString().slice(0, 10)}">`)}${fieldHtml(T('nextDue'), '<input type="date" name="next_due">')}</div>${fieldHtml(T('notes'), '<input name="notes">')}</form>`,
+    foot: btnEl(T('save'), 'btn block', async (b) => { const f = document.getElementById('vf'); if (!f.vaccine_name.value) return toast(T('required'), 'err'); b.disabled = true; try { await api('/medical/vaccinations', { method: 'POST', body: { pet_id: petId, vaccine_name: f.vaccine_name.value, date_given: f.date_given.value, next_due: f.next_due.value, notes: f.notes.value } }); toast(T('saved'), 'ok'); closeSheet(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } }) }));
+}
+function recordForm(petId) {
+  mountSheet(sheet({ title: T('addRecord'),
+    body: `<form id="mf">${fieldHtml(T('visitDate'), `<input type="date" name="visit_date" value="${new Date().toISOString().slice(0, 10)}">`)}${fieldHtml(T('diagnosis'), '<input name="diagnosis">')}${fieldHtml(T('treatment'), '<input name="treatment">')}${fieldHtml(T('notes'), '<textarea name="notes"></textarea>')}</form>`,
+    foot: btnEl(T('save'), 'btn block', async (b) => { const f = document.getElementById('mf'); b.disabled = true; try { await api('/medical/records', { method: 'POST', body: { pet_id: petId, visit_date: f.visit_date.value, diagnosis: f.diagnosis.value, treatment: f.treatment.value, notes: f.notes.value } }); toast(T('saved'), 'ok'); closeSheet(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } }) }));
+}
+
+/* ===================== more + settings ===================== */
+function openMore() {
+  const row = (icon, tile, label, onClick) => { const b = el(`<button class="row-item click"><span class="stat-ic ${tile}" style="margin:0;width:40px;height:40px">${ic(icon)}</span><div class="grow"><div class="ri-title">${esc(label)}</div></div><span class="row-chev">${ic('chevron-left')}</span></button>`); b.onclick = onClick; return b; };
+  mountSheet(sheet({ title: T('more'), body: [
+    row('paw-print', 'tile-blue', T('pets'), () => Nav.go('pets')),
+    row('users', 'tile-teal', T('clients'), () => Nav.go('clients')),
+    row('building-2', 'tile-violet', T('clinic'), () => Nav.go('clinic')),
+    el('<div class="hairline" style="margin:6px 0"></div>'),
+    row('settings-2', 'tile-info', T('settings'), () => { closeSheet(); openSettings(); }),
+    row('log-out', 'tile-danger', T('logout'), async () => { await api('/auth/logout', { method: 'POST' }); State.user = null; State.stack = []; renderLogin(); }),
+  ] }));
+}
+function openSettings() {
+  const langSeg = el(`<div class="seg"><button data-l="he" class="${window.I18N.lang === 'he' ? 'active' : ''}">עברית</button><button data-l="en" class="${window.I18N.lang === 'en' ? 'active' : ''}">English</button></div>`);
+  langSeg.querySelectorAll('button').forEach((b) => b.onclick = () => { window.I18N.setLang(b.dataset.l); closeSheet(); render(); });
+  const logout = btnEl(T('logout'), 'btn danger block', async () => { await api('/auth/logout', { method: 'POST' }); State.user = null; State.stack = []; renderLogin(); });
+  const s = mountSheet(sheet({ title: T('settings'),
+    body: [el(`<div class="card flat" style="display:flex;gap:12px;align-items:center;margin-bottom:14px">${personAvatar(State.user.role === 'vet')}<div class="grow"><div class="ri-title">${esc(State.user.name)}</div><div class="ri-meta">${esc(State.user.role === 'vet' ? T('vetTitle') : T('clientTitle'))}</div></div></div>`),
+      el(`<label class="field"><label>${esc(T('language'))}</label></label>`), langSeg],
+    foot: logout }));
+}
+function wireSettings(node) { const b = node.querySelector('[data-act="settings"]'); if (b) b.onclick = () => openSettings(); }
+
+/* ===================== sheet/button low-level helpers ===================== */
+function btnEl(label, cls, onClick) { const b = el(`<button class="${cls}">${esc(label)}</button>`); b.onclick = () => onClick(b); return b; }
+function mountSheet(s) { openSheet(s.scrim); return s; }
