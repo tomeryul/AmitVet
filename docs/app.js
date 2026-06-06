@@ -280,7 +280,7 @@ async function api(path, opts = {}) {
 (function () {
   const DICT = {
     he: {
-      appName: 'אמית-וט', appTag: 'מרפאה וטרינרית',
+      appName: 'אמית-וט', appTag: 'וטרינר עד הבית',
       login: 'התחברות', signup: 'הרשמה', email: 'אימייל', password: 'סיסמה',
       fullName: 'שם מלא', phone: 'טלפון', enter: 'כניסה', createAccount: 'יצירת חשבון',
       welcome: 'שלום', welcomeBack: 'טוב לראותך שוב',
@@ -329,10 +329,10 @@ async function api(path, opts = {}) {
       close: 'סגירה', back: 'חזרה', all: 'הכל', logout: 'יציאה', settings: 'הגדרות',
       saved: 'נשמר בהצלחה', deleted: 'נמחק', updated: 'עודכן', required: 'שדה חובה',
       vetTitle: 'וטרינר/ית', clientTitle: 'בעל/ת חיה', kg: 'ק"ג', viewAll: 'הצג הכל',
-      confirmDelete: 'האם למחוק?', language: 'שפה', loginHint: 'התחברות לדוגמה: admin@amitvet.local',
+      confirmDelete: 'האם למחוק?', language: 'שפה', theme: 'צבע ראשי', loginHint: 'התחברות לדוגמה: admin@amitvet.local',
     },
     en: {
-      appName: 'AmitVet', appTag: 'Veterinary clinic',
+      appName: 'AmitVet', appTag: 'House-call vet',
       login: 'Log in', signup: 'Sign up', email: 'Email', password: 'Password',
       fullName: 'Full name', phone: 'Phone', enter: 'Enter', createAccount: 'Create account',
       welcome: 'Hello', welcomeBack: 'Good to see you again',
@@ -381,7 +381,7 @@ async function api(path, opts = {}) {
       close: 'Close', back: 'Back', all: 'All', logout: 'Log out', settings: 'Settings',
       saved: 'Saved', deleted: 'Deleted', updated: 'Updated', required: 'Required field',
       vetTitle: 'Veterinarian', clientTitle: 'Pet owner', kg: 'kg', viewAll: 'View all',
-      confirmDelete: 'Delete this?', language: 'Language', loginHint: 'Demo login: admin@amitvet.local',
+      confirmDelete: 'Delete this?', language: 'Language', theme: 'Primary color', loginHint: 'Demo login: admin@amitvet.local',
     },
   };
   const saved = (() => { try { return localStorage.getItem('amitvet_lang'); } catch { return null; } })();
@@ -403,6 +403,50 @@ async function api(path, opts = {}) {
   window.ageFrom = (b) => { if (!b) return null; const bd = new Date(b), now = new Date(); let y = now.getFullYear()-bd.getFullYear(), m = now.getMonth()-bd.getMonth(); if (m<0){y--;m+=12;} if (I18N.lang==='he') return y>0 ? y+(y===1?' שנה':' שנים') : m+' חודשים'; return y>0 ? y+(y===1?' yr':' yrs') : m+' mo'; };
 })();
 const T = window.t, TT = window.tt;
+
+/* ===================== theme engine (in-app primary color) ===================== */
+const THEMES = {
+  navy: { label: { he: 'נייבי', en: 'Navy' }, swatch: '#21476d', vars: { '--blue': '#21476d', '--blue-600': '#21476d', '--blue-700': '#18395a', '--blue-500': '#2f5e8a', '--blue-ink': '#16324e', '--blue-soft': '#e2eaf2', '--blue-soft-2': '#cfdcea', '--sh-blue': '0 6px 16px -4px rgba(33,71,109,.36)' } },
+  teal: { label: { he: 'טורקיז', en: 'Teal' }, swatch: '#2f9489', vars: { '--blue': '#2f9489', '--blue-600': '#2f9489', '--blue-700': '#237a70', '--blue-500': '#36a597', '--blue-ink': '#1c6b62', '--blue-soft': '#dcefec', '--blue-soft-2': '#c6e6e1', '--sh-blue': '0 6px 16px -4px rgba(54,165,151,.4)' } },
+  green: { label: { he: 'ירוק זית', en: 'Olive' }, swatch: '#6c8a33', vars: { '--blue': '#6c8a33', '--blue-600': '#6c8a33', '--blue-700': '#5a7429', '--blue-500': '#86a64a', '--blue-ink': '#49611f', '--blue-soft': '#ecf1df', '--blue-soft-2': '#dde8c7', '--sh-blue': '0 6px 16px -4px rgba(121,153,60,.42)' } },
+  sky: { label: { he: 'תכלת', en: 'Sky' }, swatch: '#1773c4', vars: { '--blue': '#1773c4', '--blue-600': '#1773c4', '--blue-700': '#115e9f', '--blue-500': '#2e8ad6', '--blue-ink': '#0c4f88', '--blue-soft': '#e3eef9', '--blue-soft-2': '#d2e4f5', '--sh-blue': '0 6px 16px -4px rgba(23,115,196,.42)' } },
+  plum: { label: { he: 'סגול', en: 'Plum' }, swatch: '#7b4a86', vars: { '--blue': '#7b4a86', '--blue-600': '#7b4a86', '--blue-700': '#633a6d', '--blue-500': '#9466a0', '--blue-ink': '#4f2e58', '--blue-soft': '#efe6f2', '--blue-soft-2': '#e2d2e8', '--sh-blue': '0 6px 16px -4px rgba(123,74,134,.4)' } },
+};
+function applyTheme(key) {
+  const th = THEMES[key] || THEMES.navy;
+  const root = document.documentElement;
+  Object.entries(th.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+  try { localStorage.setItem('amitvet-theme', key); } catch {}
+}
+function currentTheme() { let s = null; try { s = localStorage.getItem('amitvet-theme'); } catch {} return s && THEMES[s] ? s : 'navy'; }
+
+/* ===================== brand logo (wordmark + roofline & dog) ===================== */
+function logoHtml(size = 1, sub, light) {
+  const navy = light ? '#ffffff' : '#21476d', teal = light ? '#bdeae3' : '#36a597', fs = 30 * size;
+  return `<div style="display:inline-flex;flex-direction:column;align-items:center;gap:${3 * size}px" dir="ltr">
+    <div style="position:relative;display:inline-flex;align-items:baseline;line-height:1">
+      <svg viewBox="0 0 140 52" style="position:absolute;bottom:${fs * 0.74}px;left:50%;transform:translateX(-50%);width:${92 * size}px;height:auto;overflow:visible">
+        <path d="M12 46 L70 13 L128 46" fill="none" stroke="${navy}" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+        <ellipse cx="62.5" cy="12" rx="3.6" ry="6.4" transform="rotate(-22 62.5 12)" fill="${teal}"/>
+        <ellipse cx="77.5" cy="12" rx="3.6" ry="6.4" transform="rotate(22 77.5 12)" fill="${teal}"/>
+        <circle cx="70" cy="16.5" r="8.4" fill="${teal}"/>
+        <circle cx="66.7" cy="15.2" r="1.25" fill="#fff"/><circle cx="73.3" cy="15.2" r="1.25" fill="#fff"/>
+        <ellipse cx="70" cy="20" rx="2.3" ry="1.7" fill="${navy}"/>
+      </svg>
+      <span style="font-family:var(--font-display);font-weight:700;font-size:${fs}px;letter-spacing:-.02em;color:${navy}">Amit</span>
+      <span style="font-family:var(--font-display);font-weight:700;font-size:${fs}px;letter-spacing:-.02em;color:${teal}">Vet</span>
+    </div>
+    ${sub ? `<span style="font-size:${13.5 * size}px;color:${navy};font-weight:700;letter-spacing:-.01em;margin-top:1px;white-space:nowrap">${esc(sub)}</span>` : ''}
+  </div>`;
+}
+function oliveBranch(style, flip) {
+  let leaves = '';
+  for (let i = 0; i < 6; i++) { const y = 14 + i * 15;
+    leaves += `<ellipse cx="26" cy="${y}" rx="13" ry="6" transform="rotate(-32 26 ${y})" fill="#8aa84e" opacity=".85"/>`;
+    leaves += `<ellipse cx="46" cy="${y + 6}" rx="13" ry="6" transform="rotate(32 46 ${y + 6})" fill="#79993c" opacity=".85"/>`;
+  }
+  return `<svg viewBox="0 0 72 120" style="${style}" aria-hidden="true"><g transform="${flip ? 'scale(-1,1) translate(-72,0)' : ''}"><path d="M36 6 Q34 60 36 116" stroke="#6c8a33" stroke-width="2.4" fill="none" stroke-linecap="round"/>${leaves}</g></svg>`;
+}
 
 /* ===================== label dictionaries ===================== */
 const APPT_TYPES = {
@@ -487,6 +531,7 @@ async function petOptions(selected) { const { pets } = await api('/pets'); retur
 
 /* ===================== boot ===================== */
 (async function init() {
+  applyTheme(currentTheme());
   if (!CONFIG_OK) return renderSetup();
   try { const { user } = await api('/auth/me'); State.user = user; State.tab = user.role === 'vet' ? 'dashboard' : 'home'; render(); }
   catch { renderLogin(); }
@@ -507,10 +552,11 @@ function renderSetup() {
 function renderLogin() {
   document.documentElement.dir = window.I18N.dir();
   const app = el(`<div class="amit-app" dir="${window.I18N.dir()}"></div>`);
-  const wrap = el(`<div class="scr"><div class="scr-scroll" style="display:flex;flex-direction:column;justify-content:center;padding:24px">
-    <div style="text-align:center;margin-bottom:8px"><div class="avatar av-vet xl" style="margin:0 auto 16px">${ic('stethoscope')}</div>
-      <h1 style="font-family:var(--font-display);font-weight:700;font-size:30px;letter-spacing:-.02em">${esc(T('appName'))}</h1>
-      <p class="muted" style="margin-top:4px">${esc(T('appTag'))}</p></div>
+  const wrap = el(`<div class="scr"><div class="scr-scroll" style="display:flex;flex-direction:column;justify-content:center;padding:24px;position:relative;overflow:hidden">
+    ${oliveBranch('position:absolute;top:-10px;inset-inline-start:-18px;width:78px;height:auto;opacity:.5')}
+    ${oliveBranch('position:absolute;bottom:-8px;inset-inline-end:-18px;width:78px;height:auto;opacity:.5', true)}
+    <div style="text-align:center;margin-bottom:8px">${logoHtml(1.5, 'ד״ר עמית יולזרי')}
+      <p class="muted" style="margin-top:10px">${esc(T('appTag'))}</p></div>
     <div class="card pad-lg mt16">
       <div class="seg mb12" id="ltabs"><button class="active" data-t="login">${esc(T('login'))}</button><button data-t="signup">${esc(T('signup'))}</button></div>
       <div id="lform"></div>
@@ -1049,10 +1095,14 @@ function openMore() {
 function openSettings() {
   const langSeg = el(`<div class="seg"><button data-l="he" class="${window.I18N.lang === 'he' ? 'active' : ''}">עברית</button><button data-l="en" class="${window.I18N.lang === 'en' ? 'active' : ''}">English</button></div>`);
   langSeg.querySelectorAll('button').forEach((b) => b.onclick = () => { window.I18N.setLang(b.dataset.l); closeSheet(); render(); });
+  const cur = currentTheme();
+  const swatches = el(`<div class="theme-swatches">${Object.entries(THEMES).map(([k, th]) => `<button data-th="${k}" title="${esc(TT(th.label))}" style="background:${th.swatch};${k === cur ? 'box-shadow:0 0 0 3px var(--card),0 0 0 5.5px ' + th.swatch + ';transform:scale(1.06)' : ''}"></button>`).join('')}</div>`);
+  swatches.querySelectorAll('button').forEach((b) => b.onclick = () => { applyTheme(b.dataset.th); closeSheet(); openSettings(); });
   const logout = btnEl(T('logout'), 'btn danger block', async () => { await api('/auth/logout', { method: 'POST' }); State.user = null; State.stack = []; renderLogin(); });
   const s = mountSheet(sheet({ title: T('settings'),
     body: [el(`<div class="card flat" style="display:flex;gap:12px;align-items:center;margin-bottom:14px">${personAvatar(State.user.role === 'vet')}<div class="grow"><div class="ri-title">${esc(State.user.name)}</div><div class="ri-meta">${esc(State.user.role === 'vet' ? T('vetTitle') : T('clientTitle'))}</div></div></div>`),
-      el(`<label class="field"><label>${esc(T('language'))}</label></label>`), langSeg],
+      el(`<div class="field"><label>${esc(T('language'))}</label></div>`), langSeg,
+      el(`<div class="field" style="margin-top:14px"><label>${esc(T('theme'))}</label></div>`), swatches],
     foot: logout }));
 }
 function wireSettings(node) { const b = node.querySelector('[data-act="settings"]'); if (b) b.onclick = () => openSettings(); }
