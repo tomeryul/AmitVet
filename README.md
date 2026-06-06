@@ -42,9 +42,10 @@
    זה יוצר את כל הטבלאות וכללי האבטחה (כולל התכונות הנוספות).
 
    > 🔄 **שדרגתם מגרסה קודמת?** אם כבר הרצתם בעבר גרסה ישנה, הריצו את קבצי הדלתא
-   > לפי הסדר: [`supabase/migration_v2.sql`](supabase/migration_v2.sql) (משימות,
-   > מרשמים, משקל, מרפאה) ו-[`supabase/migration_v3.sql`](supabase/migration_v3.sql)
-   > (תזכורות תור: `no_show`, `notifications`, `appointment_tokens`). בטוח להריץ.
+   > לפי הסדר: [`migration_v2.sql`](supabase/migration_v2.sql) (משימות, מרשמים, משקל,
+   > מרפאה), [`migration_v3.sql`](supabase/migration_v3.sql) (תזכורות תור), ו-
+   > [`migration_v4.sql`](supabase/migration_v4.sql) (חיוב: שירותים, חשבוניות,
+   > פריטי חשבונית). בטוח להריץ.
    >
    > 📩 **תזכורות תור אוטומטיות** דורשות הקמה נוספת (Edge Functions + Resend + pg_cron) —
    > מדריך מלא ב-[`supabase/REMINDERS_SETUP.md`](supabase/REMINDERS_SETUP.md).

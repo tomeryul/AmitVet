@@ -183,8 +183,19 @@ async function api(path, opts = {}) {
       .in('status', ['confirmed', 'requested']).order('scheduled_at', { ascending: true }));
     const vacRows = must(await sb.from('vaccinations').select('*, pet:pets(name, owner:profiles!owner_id(name))')
       .gte('next_due', todayStr).lte('next_due', in30.toISOString().slice(0, 10)).order('next_due', { ascending: true }));
+    // revenue: paid this calendar month + outstanding (sent, unpaid)
+    const monthStart = new Date(start.getFullYear(), start.getMonth(), 1).toISOString().slice(0, 10);
+    let paidThisMonth = 0, outstanding = 0;
+    try {
+      const [paidRows, dueRows] = await Promise.all([
+        sb.from('invoices').select('total').eq('status', 'paid').gte('issued_at', monthStart).then((r) => r.data || []),
+        sb.from('invoices').select('total').eq('status', 'sent').then((r) => r.data || []),
+      ]);
+      paidThisMonth = paidRows.reduce((s, x) => s + Number(x.total || 0), 0);
+      outstanding = dueRows.reduce((s, x) => s + Number(x.total || 0), 0);
+    } catch {}
     return {
-      stats: { pendingAppointments: pa.count || 0, openInquiries: oi.count || 0, totalClients: tc.count || 0, totalPets: tp.count || 0, openTasks: ot.count || 0 },
+      stats: { pendingAppointments: pa.count || 0, openInquiries: oi.count || 0, totalClients: tc.count || 0, totalPets: tp.count || 0, openTasks: ot.count || 0, paidThisMonth, outstanding },
       todayAppointments: todayRows.map((a) => ({ ...a, client_name: a.client?.name, pet_name: a.pet?.name })),
       upcomingVaccinations: vacRows.map((v) => ({ ...v, pet_name: v.pet?.name, owner_name: v.pet?.owner?.name })),
     };
@@ -267,6 +278,56 @@ async function api(path, opts = {}) {
     return { notifications: rows };
   }
 
+  // ---------------- services (price list) ----------------
+  if (s[0] === 'services' && s.length === 1 && method === 'GET') {
+    return { services: must(await sb.from('services').select('*').order('name')) };
+  }
+  if (s[0] === 'services' && method === 'POST') {
+    return { service: must(await sb.from('services').insert({ name: b.name, price: Number(b.price) || 0, active: b.active !== false }).select().single()) };
+  }
+  if (s[0] === 'services' && s.length === 2 && method === 'PATCH') {
+    const patch = {}; if (b.name != null) patch.name = b.name; if (b.price != null) patch.price = Number(b.price); if (b.active != null) patch.active = !!b.active;
+    return { service: must(await sb.from('services').update(patch).eq('id', s[1]).select().single()) };
+  }
+  if (s[0] === 'services' && method === 'DELETE') { must(await sb.from('services').delete().eq('id', s[1])); return { ok: true }; }
+
+  // ---------------- invoices ----------------
+  if (s[0] === 'invoices' && s.length === 1 && method === 'GET') {
+    let qy = sb.from('invoices').select('*, client:profiles!client_id(name), pet:pets(name)');
+    if (vet() && q.status) qy = qy.eq('status', q.status);
+    const rows = must(await qy.order('issued_at', { ascending: false }).order('id', { ascending: false }));
+    return { invoices: rows.map((i) => ({ ...i, client_name: i.client?.name, pet_name: i.pet?.name })) };
+  }
+  if (s[0] === 'invoices' && s.length === 2 && method === 'GET') {
+    const [inv, items] = await Promise.all([
+      sb.from('invoices').select('*, client:profiles!client_id(name,phone,email), pet:pets(name,species)').eq('id', s[1]).single().then(must),
+      sb.from('invoice_items').select('*').eq('invoice_id', s[1]).order('id').then(must),
+    ]);
+    return { invoice: { ...inv, client_name: inv.client?.name, client_phone: inv.client?.phone, client_email: inv.client?.email, pet_name: inv.pet?.name }, items };
+  }
+  if (s[0] === 'invoices' && s.length === 1 && method === 'POST') {
+    const items = Array.isArray(b.items) ? b.items : [];
+    const subtotal = items.reduce((acc, it) => acc + (Number(it.qty) || 0) * (Number(it.unit_price) || 0), 0);
+    const taxRate = Number(b.tax_rate) || 0;
+    const taxAmount = +(subtotal * taxRate / 100).toFixed(2);
+    const total = +(subtotal + taxAmount).toFixed(2);
+    const inv = must(await sb.from('invoices').insert({ client_id: b.client_id, pet_id: b.pet_id ? Number(b.pet_id) : null,
+      appointment_id: b.appointment_id ? Number(b.appointment_id) : null, status: b.status || 'draft',
+      issued_at: b.issued_at || new Date().toISOString().slice(0, 10), due_date: b.due_date || null,
+      tax_rate: taxRate, subtotal, tax_amount: taxAmount, total, notes: b.notes || null, created_by: uid() }).select('id').single());
+    if (items.length) {
+      must(await sb.from('invoice_items').insert(items.map((it) => ({ invoice_id: inv.id, description: it.description,
+        qty: Number(it.qty) || 1, unit_price: Number(it.unit_price) || 0, line_total: +((Number(it.qty) || 0) * (Number(it.unit_price) || 0)).toFixed(2) }))));
+    }
+    return { invoice: { id: inv.id } };
+  }
+  if (s[0] === 'invoices' && s.length === 2 && method === 'PATCH') {
+    const patch = {}; if (b.status) { patch.status = b.status; if (b.status === 'paid') patch.paid_at = new Date().toISOString(); }
+    if (b.notes !== undefined) patch.notes = b.notes;
+    return { invoice: must(await sb.from('invoices').update(patch).eq('id', s[1]).select().single()) };
+  }
+  if (s[0] === 'invoices' && method === 'DELETE') { must(await sb.from('invoices').delete().eq('id', s[1])); return { ok: true }; }
+
   throw new Error('פעולה לא נתמכת: ' + method + ' ' + raw);
 }
 
@@ -330,6 +391,15 @@ async function api(path, opts = {}) {
       saved: 'נשמר בהצלחה', deleted: 'נמחק', updated: 'עודכן', required: 'שדה חובה',
       vetTitle: 'וטרינר/ית', clientTitle: 'בעל/ת חיה', kg: 'ק"ג', viewAll: 'הצג הכל',
       confirmDelete: 'האם למחוק?', language: 'שפה', theme: 'צבע ראשי', loginHint: 'התחברות לדוגמה: admin@amitvet.local',
+      invoices: 'חשבוניות', myInvoices: 'החשבוניות שלי', invoice: 'חשבונית', newInvoice: 'חשבונית חדשה',
+      priceList: 'מחירון', services: 'שירותים', service: 'שירות', addService: 'הוספת שירות', price: 'מחיר',
+      lineItems: 'פריטים', addItem: 'הוספת פריט', description: 'תיאור', qty: 'כמות', unitPrice: 'מחיר יחידה',
+      subtotal: 'סכום ביניים', taxRate: 'מע״מ %', tax: 'מע״מ', total: 'סה״כ', notesOpt: 'הערות',
+      selectClient: 'בחירת לקוח', dueDate2: 'לתשלום עד', issuedAt: 'תאריך הפקה', invoiceNo: 'מספר',
+      markPaid: 'סימון כשולם', markSent: 'סימון כנשלח', voidInv: 'ביטול חשבונית', printInv: 'הדפסה / PDF',
+      noInvoices: 'אין חשבוניות', noInvoicesSub: 'צרו חשבונית ראשונה בלחיצה', noServices: 'אין שירותים במחירון',
+      revenue: 'הכנסות', paidThisMonth: 'שולם החודש', outstanding: 'לתשלום',
+      st_draft: 'טיוטה', st_sent: 'נשלחה', st_paid: 'שולם', st_void: 'בוטלה', fromPriceList: 'מהמחירון',
     },
     en: {
       appName: 'AmitVet', appTag: 'House-call vet',
@@ -382,6 +452,15 @@ async function api(path, opts = {}) {
       saved: 'Saved', deleted: 'Deleted', updated: 'Updated', required: 'Required field',
       vetTitle: 'Veterinarian', clientTitle: 'Pet owner', kg: 'kg', viewAll: 'View all',
       confirmDelete: 'Delete this?', language: 'Language', theme: 'Primary color', loginHint: 'Demo login: admin@amitvet.local',
+      invoices: 'Invoices', myInvoices: 'My Invoices', invoice: 'Invoice', newInvoice: 'New invoice',
+      priceList: 'Price list', services: 'Services', service: 'Service', addService: 'Add service', price: 'Price',
+      lineItems: 'Items', addItem: 'Add item', description: 'Description', qty: 'Qty', unitPrice: 'Unit price',
+      subtotal: 'Subtotal', taxRate: 'VAT %', tax: 'VAT', total: 'Total', notesOpt: 'Notes',
+      selectClient: 'Select client', dueDate2: 'Due by', issuedAt: 'Issued', invoiceNo: 'No.',
+      markPaid: 'Mark paid', markSent: 'Mark sent', voidInv: 'Void invoice', printInv: 'Print / PDF',
+      noInvoices: 'No invoices', noInvoicesSub: 'Create your first invoice', noServices: 'No services in price list',
+      revenue: 'Revenue', paidThisMonth: 'Paid this month', outstanding: 'Outstanding',
+      st_draft: 'Draft', st_sent: 'Sent', st_paid: 'Paid', st_void: 'Void', fromPriceList: 'From price list',
     },
   };
   const saved = (() => { try { return localStorage.getItem('amitvet_lang'); } catch { return null; } })();
@@ -464,6 +543,8 @@ const INQ_STATUS = { open: { he: 'פתוח', en: 'Open' }, in_progress: { he: '�
 const PRIORITY = { low: { he: 'נמוכה', en: 'Low' }, normal: { he: 'רגילה', en: 'Normal' }, high: { he: 'גבוהה', en: 'High' }, urgent: { he: 'דחוף', en: 'Urgent' } };
 const SEX = { male: { he: 'זכר', en: 'Male' }, female: { he: 'נקבה', en: 'Female' }, unknown: { he: 'לא ידוע', en: 'Unknown' } };
 const NOTIF_TEMPLATE = { reminder_24h: { he: 'תזכורת 24 שעות', en: '24h reminder' }, reminder_2h: { he: 'תזכורת שעתיים', en: '2h reminder' } };
+const INV_STATUS = { draft: { he: 'טיוטה', en: 'Draft' }, sent: { he: 'נשלחה', en: 'Sent' }, paid: { he: 'שולם', en: 'Paid' }, void: { he: 'בוטלה', en: 'Void' } };
+function money(n) { return '₪' + Number(n || 0).toLocaleString(window.I18N.locale(), { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
 
 // Map free-text species (Hebrew or English) → gradient avatar + Lucide icon.
 function speciesMeta(s) {
@@ -615,7 +696,7 @@ function tabsFor(role, stats) {
   ];
 }
 function tabBar(tabs, active) {
-  const moreActive = active === 'more' || ['pets', 'clients', 'clinic'].includes(active);
+  const moreActive = active === 'more' || ['pets', 'clients', 'clinic', 'invoices', 'services'].includes(active);
   const bar = el('<div class="tabbar"></div>');
   tabs.forEach((tb) => {
     const on = tb.id === 'more' ? moreActive : tb.id === active;
@@ -630,7 +711,9 @@ function fabBtn(label, icon, onClick) { const b = el(`<button class="fab">${ic(i
 const SCREENS = {
   home: clientHome, dashboard: vetDashboard, pets: petsList, appts: apptsList,
   inquiries: inquiriesList, clinic: clinicScreen, tasks: tasksScreen, clients: clientsScreen,
+  invoices: invoicesList, services: servicesList,
 };
+const STACK = { pet: petDetail, chat: chatScreen, invoice: invoiceDetail };
 
 async function render() {
   if (!State.user) return renderLogin();
@@ -642,7 +725,7 @@ async function render() {
   try {
     const top = State.stack[State.stack.length - 1];
     let result;
-    if (top) result = await (top.name === 'pet' ? petDetail(top.params) : chatScreen(top.params));
+    if (top) result = await (STACK[top.name] || petDetail)(top.params);
     else result = await (SCREENS[State.tab] || (State.user.role === 'vet' ? vetDashboard : clientHome))();
     app.querySelector('#screen').replaceChildren(result.node);
     if (!top) {
@@ -723,8 +806,11 @@ async function vetDashboard() {
   const s = d.stats;
   const trailing = iconbtn('settings-2', 'data-act="settings"');
   const statCard = (n, label, icon, tile) => `<div class="stat"><span class="stat-ic ${tile}">${ic(icon)}</span><div class="stat-n">${n}</div><div class="stat-l">${esc(label)}</div></div>`;
+  const moneyCard = (amt, label, icon, tile) => `<div class="stat"><span class="stat-ic ${tile}">${ic(icon)}</span><div class="stat-n" style="font-size:24px">${money(amt)}</div><div class="stat-l">${esc(label)}</div></div>`;
   const body = el(`<div>
     <div class="section"><div class="grid c2">
+      ${moneyCard(s.paidThisMonth || 0, T('paidThisMonth'), 'wallet', 'tile-green')}
+      ${moneyCard(s.outstanding || 0, T('outstanding'), 'receipt', 'tile-warn')}
       ${statCard(s.pendingAppointments, T('pendingAppts'), 'calendar-clock', 'tile-warn')}
       ${statCard(s.openInquiries, T('openInquiries'), 'message-circle', 'tile-info')}
       ${statCard(s.openTasks || 0, T('openTasks'), 'list-checks', 'tile-violet')}
@@ -1018,6 +1104,152 @@ async function clientsScreen() {
   return { node: scrNode({ title: T('clients') }, body, { hasTabs: true }) };
 }
 
+/* ===================== billing: invoices + price list ===================== */
+let invFilter = '';
+async function invoicesList() {
+  const { invoices } = await api('/invoices' + (invFilter ? '?status=' + invFilter : ''));
+  const body = el('<div></div>');
+  const chips = el('<div class="chips"></div>');
+  [['', T('all')], ['draft', TT(INV_STATUS.draft)], ['sent', TT(INV_STATUS.sent)], ['paid', TT(INV_STATUS.paid)], ['void', TT(INV_STATUS.void)]]
+    .forEach(([v, l]) => { const c = el(`<button class="chip${invFilter === v ? ' active' : ''}">${esc(l)}</button>`); c.onclick = () => { invFilter = v; render(); }; chips.appendChild(c); });
+  body.appendChild(chips);
+  const sect = el('<div class="section"><div class="stack sm" id="list"></div></div>'); body.appendChild(sect);
+  const list = sect.querySelector('#list');
+  if (!invoices.length) list.innerHTML = `<div class="empty"><div class="empty-ic">${ic('receipt')}</div><div class="empty-t">${esc(T('noInvoices'))}</div><div class="empty-s">${esc(T('noInvoicesSub'))}</div></div>`;
+  invoices.forEach((iv) => { const r = el(`<div class="row-item click"><span class="stat-ic ${iv.status === 'paid' ? 'tile-ok' : iv.status === 'void' ? 'tile-danger' : 'tile-green'}" style="margin:0">${ic('receipt')}</span>
+    <div class="grow"><div class="ri-title">${esc(iv.number)} · ${money(iv.total)}</div><div class="ri-meta truncate">${esc(iv.client_name || '')}${iv.pet_name ? ' · ' + esc(iv.pet_name) : ''} · ${esc(window.fmtDate(iv.issued_at))}</div></div>
+    <span class="badge b-${iv.status}">${esc(TT(INV_STATUS[iv.status]))}</span></div>`);
+    r.onclick = () => Nav.push('invoice', { id: iv.id }); list.appendChild(r); });
+  return { node: scrNode({ title: T('invoices') }, body, { hasTabs: true, hasFab: true }), fab: fabBtn(T('newInvoice'), 'plus', () => invoiceForm()) };
+}
+
+async function invoiceDetail({ id }) {
+  const isVet = State.user.role === 'vet';
+  const { invoice: iv, items } = await api(`/invoices/${id}`);
+  const rows = items.map((it) => `<div class="drow"><div class="dk" style="width:auto;flex:1">${esc(it.description)} ${it.qty > 1 ? '× ' + it.qty : ''}</div><div class="dv" style="flex:none">${money(it.line_total)}</div></div>`).join('');
+  const body = el(`<div class="section">
+    <div class="card pad-lg">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-family:var(--font-display);font-weight:700;font-size:20px">${esc(iv.number)}</div>
+        <span class="badge b-${iv.status}">${esc(TT(INV_STATUS[iv.status]))}</span></div>
+      <div class="drow"><div class="dk">${ic('user')}${esc(T('selectClient'))}</div><div class="dv">${esc(iv.client_name || '')}${iv.pet_name ? ' · ' + esc(iv.pet_name) : ''}</div></div>
+      <div class="drow"><div class="dk">${ic('calendar')}${esc(T('issuedAt'))}</div><div class="dv">${esc(window.fmtDate(iv.issued_at))}${iv.due_date ? ' · ' + esc(T('dueDate2')) + ' ' + esc(window.fmtDate(iv.due_date)) : ''}</div></div>
+    </div>
+    <div class="card pad-lg mt12">
+      <div class="section-head" style="margin:0 0 8px"><h2>${esc(T('lineItems'))}</h2></div>
+      ${rows || `<div class="muted">—</div>`}
+      <div class="hairline" style="margin:10px 0"></div>
+      <div class="drow"><div class="dk" style="width:auto;flex:1">${esc(T('subtotal'))}</div><div class="dv" style="flex:none">${money(iv.subtotal)}</div></div>
+      ${Number(iv.tax_rate) ? `<div class="drow"><div class="dk" style="width:auto;flex:1">${esc(T('tax'))} ${iv.tax_rate}%</div><div class="dv" style="flex:none">${money(iv.tax_amount)}</div></div>` : ''}
+      <div class="drow"><div class="dk" style="width:auto;flex:1;font-weight:800;color:var(--ink)">${esc(T('total'))}</div><div class="dv" style="flex:none;font-size:18px;font-weight:800">${money(iv.total)}</div></div>
+    </div>
+    ${iv.notes ? `<div class="card flat mt12">${esc(iv.notes)}</div>` : ''}
+    <div class="stack sm" style="margin-top:14px" id="acts"></div>
+  </div>`);
+  const acts = body.querySelector('#acts');
+  acts.appendChild(btnEl(T('printInv'), 'btn soft block', () => printInvoice(iv, items)));
+  if (isVet) {
+    if (iv.status === 'draft') acts.appendChild(btnEl(T('markSent'), 'btn ghost block', async () => { await api(`/invoices/${id}`, { method: 'PATCH', body: { status: 'sent' } }); toast(T('updated'), 'ok'); render(); }));
+    if (iv.status !== 'paid' && iv.status !== 'void') acts.appendChild(btnEl(T('markPaid'), 'btn green block', async () => { await api(`/invoices/${id}`, { method: 'PATCH', body: { status: 'paid' } }); toast(T('updated'), 'ok'); render(); }));
+    if (iv.status !== 'void') acts.appendChild(btnEl(T('voidInv'), 'btn block', async () => { if (!confirm(T('voidInv') + '?')) return; await api(`/invoices/${id}`, { method: 'PATCH', body: { status: 'void' } }); toast(T('updated'), 'ok'); render(); }));
+    acts.appendChild(btnEl(T('del'), 'btn danger block', async () => { if (!confirm(T('confirmDelete'))) return; await api(`/invoices/${id}`, { method: 'DELETE' }); toast(T('deleted'), 'ok'); Nav.back(); }));
+  }
+  return { node: scrNode({ title: T('invoice'), leading: backBtn() }, body) };
+}
+
+async function invoiceForm() {
+  const [{ clients }, { services }] = await Promise.all([api('/admin/clients'), api('/services')]);
+  const clientOpts = clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  const svcOpts = (services || []).filter((s) => s.active).map((s) => `<option value="${esc(s.name)}|${s.price}">${esc(s.name)} · ${money(s.price)}</option>`).join('');
+  const today = new Date().toISOString().slice(0, 10);
+  const form = el(`<form id="invf">
+    ${fieldHtml(T('selectClient'), `<select name="client_id" required><option value="">—</option>${clientOpts}</select>`)}
+    <div class="field-row">${fieldHtml(T('issuedAt'), `<input type="date" name="issued_at" value="${today}">`)}${fieldHtml(T('dueDate2'), '<input type="date" name="due_date">')}</div>
+    <div class="field"><label>${esc(T('lineItems'))}</label><div id="items" class="stack sm"></div>
+      <div class="field-row" style="margin-top:8px">
+        <select id="svcpick"><option value="">＋ ${esc(T('fromPriceList'))}</option>${svcOpts}</select>
+        <button type="button" class="btn soft sm" id="additem">${ic('plus')}${esc(T('addItem'))}</button></div>
+    </div>
+    <div class="field-row">${fieldHtml(T('taxRate'), '<input type="number" step="0.1" name="tax_rate" value="0">')}<div class="field"><label>${esc(T('total'))}</label><div id="livetotal" style="font-family:var(--font-display);font-weight:800;font-size:20px;padding-top:8px">${money(0)}</div></div></div>
+    ${fieldHtml(T('notesOpt'), '<textarea name="notes"></textarea>')}
+  </form>`);
+  const itemsBox = form.querySelector('#items');
+  const addItemRow = (desc = '', price = '') => {
+    const row = el(`<div class="field-row" style="gap:6px;margin-bottom:0">
+      <input class="it-desc" placeholder="${esc(T('description'))}" value="${esc(desc)}" style="flex:2">
+      <input class="it-qty" type="number" step="0.5" value="1" style="flex:.6" aria-label="${esc(T('qty'))}">
+      <input class="it-price" type="number" step="0.5" placeholder="${esc(T('unitPrice'))}" value="${esc(price)}" style="flex:1">
+      <button type="button" class="iconbtn ghost it-del" style="width:38px;height:38px">${ic('x')}</button></div>`);
+    row.querySelector('.it-del').onclick = () => { row.remove(); recalc(); };
+    row.querySelectorAll('input').forEach((i) => i.addEventListener('input', recalc));
+    itemsBox.appendChild(row); drawIcons(); recalc();
+  };
+  function recalc() {
+    let sub = 0;
+    itemsBox.querySelectorAll('.field-row').forEach((r) => { sub += (Number(r.querySelector('.it-qty').value) || 0) * (Number(r.querySelector('.it-price').value) || 0); });
+    const tax = sub * (Number(form.tax_rate.value) || 0) / 100;
+    form.querySelector('#livetotal').textContent = money(sub + tax);
+  }
+  form.querySelector('#additem').onclick = () => addItemRow();
+  form.tax_rate.addEventListener('input', recalc);
+  form.querySelector('#svcpick').onchange = (e) => { if (!e.target.value) return; const [n, p] = e.target.value.split('|'); addItemRow(n, p); e.target.value = ''; };
+  addItemRow();
+  const collect = () => Array.from(itemsBox.querySelectorAll('.field-row')).map((r) => ({ description: r.querySelector('.it-desc').value.trim(), qty: r.querySelector('.it-qty').value, unit_price: r.querySelector('.it-price').value })).filter((it) => it.description);
+  const save = async (status, btn) => {
+    if (!form.client_id.value) return toast(T('required'), 'err');
+    const items = collect(); if (!items.length) return toast(T('addItem'), 'err');
+    btn.disabled = true;
+    try { const { invoice } = await api('/invoices', { method: 'POST', body: { client_id: form.client_id.value, issued_at: form.issued_at.value, due_date: form.due_date.value, tax_rate: form.tax_rate.value, notes: form.notes.value, status, items } });
+      toast(T('saved'), 'ok'); closeSheet(); Nav.push('invoice', { id: invoice.id }); } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+  };
+  mountSheet(sheet({ title: T('newInvoice'), body: form,
+    foot: [btnEl(T('st_draft'), 'btn soft', (b) => save('draft', b)), btnEl(T('markSent'), 'btn', (b) => save('sent', b))] }));
+}
+
+function printInvoice(iv, items) {
+  const rows = items.map((it) => `<tr><td>${esc(it.description)}</td><td style="text-align:center">${it.qty}</td><td style="text-align:end">${money(it.unit_price)}</td><td style="text-align:end">${money(it.line_total)}</td></tr>`).join('');
+  const w = window.open('', '_blank');
+  if (!w) { toast('נא לאפשר חלונות קופצים', 'err'); return; }
+  w.document.write(`<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8"><title>${esc(iv.number)}</title>
+    <style>body{font-family:Arial,Helvetica,sans-serif;color:#1c3347;padding:32px;max-width:720px;margin:auto}
+    h1{color:#21476d;margin:0}.teal{color:#36a597}.muted{color:#6f7a80;font-size:13px}
+    table{width:100%;border-collapse:collapse;margin-top:18px}th,td{padding:9px 8px;border-bottom:1px solid #e4ebf2;font-size:14px}
+    th{text-align:start;color:#6f7a80;font-size:12px}tfoot td{border:none;font-weight:700}.tot{font-size:18px;color:#21476d}
+    .head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #21476d;padding-bottom:12px}</style></head>
+    <body><div class="head"><div><h1>Amit<span class="teal">Vet</span></h1><div class="muted">וטרינר עד הבית</div></div>
+    <div style="text-align:end"><div style="font-weight:700;font-size:18px">${esc(iv.number)}</div><div class="muted">${esc(window.fmtDate(iv.issued_at))}</div></div></div>
+    <div style="margin-top:14px"><b>${esc(iv.client_name || '')}</b>${iv.client_phone ? ' · ' + esc(iv.client_phone) : ''}${iv.pet_name ? '<br>' + esc(T('whichPet') + ': ' + iv.pet_name) : ''}</div>
+    <table><thead><tr><th>${esc(T('description'))}</th><th style="text-align:center">${esc(T('qty'))}</th><th style="text-align:end">${esc(T('unitPrice'))}</th><th style="text-align:end">${esc(T('total'))}</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td colspan="3" style="text-align:end">${esc(T('subtotal'))}</td><td style="text-align:end">${money(iv.subtotal)}</td></tr>
+    ${Number(iv.tax_rate) ? `<tr><td colspan="3" style="text-align:end">${esc(T('tax'))} ${iv.tax_rate}%</td><td style="text-align:end">${money(iv.tax_amount)}</td></tr>` : ''}
+    <tr><td colspan="3" style="text-align:end" class="tot">${esc(T('total'))}</td><td style="text-align:end" class="tot">${money(iv.total)}</td></tr></tfoot></table>
+    ${iv.notes ? `<p class="muted" style="margin-top:16px">${esc(iv.notes)}</p>` : ''}
+    <script>window.onload=function(){window.print()}<\/script></body></html>`);
+  w.document.close();
+}
+
+/* ===================== price list (services) ===================== */
+async function servicesList() {
+  const { services } = await api('/services');
+  const body = el('<div class="section"><div class="stack sm" id="list"></div></div>');
+  const list = body.querySelector('#list');
+  if (!services.length) list.innerHTML = `<div class="empty"><div class="empty-ic">${ic('tag')}</div><div class="empty-t">${esc(T('noServices'))}</div></div>`;
+  services.forEach((sv) => { const r = el(`<div class="row-item click"><span class="stat-ic tile-warn" style="margin:0">${ic('tag')}</span>
+    <div class="grow"><div class="ri-title">${esc(sv.name)}</div><div class="ri-meta">${money(sv.price)}${sv.active ? '' : ' · —'}</div></div><span class="row-chev">${ic('chevron-left')}</span></div>`);
+    r.onclick = () => serviceForm(sv); list.appendChild(r); });
+  return { node: scrNode({ title: T('priceList') }, body, { hasTabs: true, hasFab: true }), fab: fabBtn(T('addService'), 'plus', () => serviceForm()) };
+}
+function serviceForm(svc) {
+  const footBtns = [btnEl(svc ? T('save') : T('add'), 'btn block', async (b) => { const f = document.getElementById('svf'); if (!f.name.value) return toast(T('required'), 'err'); b.disabled = true;
+    try { await api(svc ? `/services/${svc.id}` : '/services', { method: svc ? 'PATCH' : 'POST', body: { name: f.name.value, price: f.price.value, active: f.active.checked } }); toast(T('saved'), 'ok'); closeSheet(); render(); } catch (e) { toast(e.message, 'err'); b.disabled = false; } })];
+  if (svc) footBtns.unshift(btnEl(T('del'), 'btn danger', async () => { if (!confirm(T('confirmDelete'))) return; await api(`/services/${svc.id}`, { method: 'DELETE' }); toast(T('deleted'), 'ok'); closeSheet(); render(); }));
+  mountSheet(sheet({ title: svc ? T('service') : T('addService'),
+    body: `<form id="svf">${fieldHtml(T('service'), `<input name="name" required value="${esc(svc?.name || '')}">`)}${fieldHtml(T('price') + ' (₪)', `<input type="number" step="0.5" name="price" value="${esc(svc?.price || '')}">`)}
+      <label style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px"><input type="checkbox" name="active" ${svc ? (svc.active ? 'checked' : '') : 'checked'} style="width:auto">${esc(TT({ he: 'פעיל', en: 'Active' }))}</label></form>`,
+    foot: footBtns }));
+}
+
 /* ===================== clinic ===================== */
 async function clinicScreen() {
   const isVet = State.user.role === 'vet';
@@ -1086,6 +1318,8 @@ function openMore() {
   mountSheet(sheet({ title: T('more'), body: [
     row('paw-print', 'tile-blue', T('pets'), () => Nav.go('pets')),
     row('users', 'tile-teal', T('clients'), () => Nav.go('clients')),
+    row('receipt', 'tile-green', T('invoices'), () => Nav.go('invoices')),
+    row('tag', 'tile-warn', T('priceList'), () => Nav.go('services')),
     row('building-2', 'tile-violet', T('clinic'), () => Nav.go('clinic')),
     el('<div class="hairline" style="margin:6px 0"></div>'),
     row('settings-2', 'tile-info', T('settings'), () => { closeSheet(); openSettings(); }),

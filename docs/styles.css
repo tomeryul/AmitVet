@@ -467,3 +467,9 @@ a.btn { text-decoration: none; }
 .section-head .link { background: none; cursor: pointer; }
 .theme-swatches { display: flex; gap: 12px; margin-top: 4px; }
 .theme-swatches button { width: 40px; height: 40px; border-radius: 50%; box-shadow: var(--sh-sm); transition: .15s var(--ease); }
+
+/* invoice status badges */
+.amit-app .b-draft { background: var(--bg-2); color: var(--ink-3); }
+.amit-app .b-sent { background: var(--warn-soft); color: var(--warn); }
+.amit-app .b-paid { background: var(--ok-soft); color: var(--ok); }
+.amit-app .b-void { background: var(--danger-soft); color: var(--danger); }
