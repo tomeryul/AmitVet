@@ -439,7 +439,13 @@
    Web host — live app (not a prototype phone frame)
    Centers a phone-width column on desktop, full-bleed on mobile.
    ============================================================ */
-html, body { height: 100%; margin: 0; }
+html, body {
+  height: 100%; margin: 0;
+  touch-action: manipulation;        /* no double-tap zoom */
+  -webkit-text-size-adjust: 100%;    /* no auto text inflation */
+  -ms-touch-action: manipulation;
+  overscroll-behavior: none;
+}
 body {
   font-family: var(--font-body);
   background: radial-gradient(120% 90% at 50% 0%, #f7f2e9 0%, #efe7d8 55%, #e7ddcb 100%);
